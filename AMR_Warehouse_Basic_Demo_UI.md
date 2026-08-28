@@ -59,7 +59,7 @@ Use only:
 
 ``` text
 React
-TypeScript
+javascript
 Vite
 Tailwind CSS
 React-Konva

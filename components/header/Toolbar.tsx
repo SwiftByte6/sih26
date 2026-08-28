@@ -35,6 +35,57 @@ export const Toolbar: React.FC = () => {
     setShowReconstruction(true);
   };
 
+  const handleNativeImport = async () => {
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const file = await open({
+        multiple: false,
+        filters: [{
+          name: 'Map Images',
+          extensions: ['png', 'jpg', 'jpeg', 'pdf', 'svg']
+        }]
+      });
+      if (file) {
+        handlePreview();
+      }
+    } catch (e) {
+      setShowImport(true);
+    }
+  };
+
+  const handleToolbarClick = async (label: string) => {
+    try {
+      if (label === 'Open') {
+        const { open } = await import('@tauri-apps/plugin-dialog');
+        const file = await open({
+          filters: [{ name: 'Config', extensions: ['json'] }]
+        });
+        if (file) {
+           const { readTextFile } = await import('@tauri-apps/plugin-fs');
+           // file is string or object depending on Tauri v1/v2, usually object in v2. 
+           // In Tauri v2 it might return an object with a path property, or string.
+           const path = typeof file === 'string' ? file : (file as any).path;
+           if (path) {
+             const content = await readTextFile(path);
+             console.log("Loaded content:", content.substring(0, 50));
+           }
+        }
+      } else if (label === 'Save') {
+        const { save } = await import('@tauri-apps/plugin-dialog');
+        const file = await save({
+          filters: [{ name: 'Config', extensions: ['json'] }]
+        });
+        if (file) {
+          const { writeTextFile } = await import('@tauri-apps/plugin-fs');
+          await writeTextFile(file, JSON.stringify({ demo: "data" }));
+          console.log("Saved");
+        }
+      }
+    } catch (e) {
+      console.log("Native API failed (fallback or not in Tauri):", e);
+    }
+  };
+
   return (
     <>
       <div className="h-[36px] bg-toolbar flex items-center px-2 border-b border-border gap-2">
@@ -46,6 +97,7 @@ export const Toolbar: React.FC = () => {
                   key={tool.label}
                   className="flex items-center justify-center p-1.5 hover:bg-app rounded-sm text-muted hover:text-text"
                   title={tool.label}
+                  onClick={() => handleToolbarClick(tool.label)}
                 >
                   <tool.icon size={16} />
                 </button>
@@ -61,7 +113,7 @@ export const Toolbar: React.FC = () => {
         
         <button
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-[12px] font-medium text-text hover:bg-app transition-colors"
-          onClick={() => setShowImport(true)}
+          onClick={handleNativeImport}
         >
           <Upload size={14} />
           Import Map

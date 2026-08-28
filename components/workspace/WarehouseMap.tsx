@@ -3,19 +3,31 @@
 import React from 'react';
 import { Stage, Layer, Rect, Circle, Line, Text, Group } from 'react-konva';
 import { useWarehouseStore } from '../../store/warehouseStore';
+import { Obstacle } from './Obstacle';
 
 export const WarehouseMap: React.FC = () => {
-  const { shelves, paths, pois, robots, obstacles, intersections, selectedItemId, setSelectedItem } = useWarehouseStore();
+  const { shelves, paths, pois, robots, obstacles, intersections, selectedItemId, setSelectedItem, scale, pan } = useWarehouseStore();
 
   const handleSelect = (id: string, type: any) => {
     setSelectedItem(id, type);
   };
 
   return (
-    <Stage width={800} height={600} style={{ background: 'transparent' }}>
+    <Stage 
+      width={800} 
+      height={600} 
+      style={{ background: 'transparent' }}
+      scale={{ x: scale, y: scale }}
+      x={pan.x}
+      y={pan.y}
+      onClick={(e) => {
+        // Deselect if clicking on empty space
+        if (e.target === e.target.getStage()) {
+          setSelectedItem(null, null);
+        }
+      }}
+    >
       <Layer>
-        {/* Grid would go here, maybe implemented as lines or CSS background on container */}
-        
         {/* Paths */}
         {paths.map(path => {
           const start = intersections.find(i => i.id === path.startId);
@@ -69,35 +81,7 @@ export const WarehouseMap: React.FC = () => {
 
         {/* Obstacles */}
         {obstacles.map(obstacle => (
-          <Group key={obstacle.id} x={obstacle.x} y={obstacle.y}>
-            <Rect
-              width={obstacle.width}
-              height={obstacle.height}
-              fill="#fdf5f5"
-              stroke="#C83E3E"
-              strokeWidth={2}
-              dash={[4, 2]}
-            />
-            <Text
-              text="!"
-              width={obstacle.width}
-              height={obstacle.height}
-              align="center"
-              verticalAlign="middle"
-              fill="#C83E3E"
-              fontSize={20}
-              fontStyle="bold"
-            />
-            <Text
-              text="OBSTACLE"
-              y={obstacle.height + 4}
-              width={obstacle.width}
-              align="center"
-              fill="#C83E3E"
-              fontSize={8}
-              fontStyle="bold"
-            />
-          </Group>
+          <Obstacle key={obstacle.id} obstacle={obstacle} />
         ))}
 
         {/* POIs */}

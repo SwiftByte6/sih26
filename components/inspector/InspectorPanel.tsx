@@ -4,9 +4,10 @@ import React from 'react';
 import { useWarehouseStore } from '../../store/warehouseStore';
 
 export const InspectorPanel: React.FC = () => {
-  const { selectedItemId, selectedItemType, robots } = useWarehouseStore();
+  const { selectedItemId, selectedItemType, robots, obstacles, removeObstacle } = useWarehouseStore();
 
   const selectedRobot = selectedItemType === 'ROBOT' ? robots.find(r => r.id === selectedItemId) : null;
+  const selectedObstacle = selectedItemType === 'OBSTACLE' ? obstacles.find(o => o.id === selectedItemId) : null;
 
   return (
     <div className="w-[240px] bg-panel border-l border-border flex flex-col flex-shrink-0">
@@ -15,11 +16,12 @@ export const InspectorPanel: React.FC = () => {
       </div>
       
       <div className="p-3 overflow-y-auto flex-1">
-        {selectedRobot ? (
+        {selectedRobot && (
           <div className="flex flex-col gap-4 text-[12px] text-text">
             <div>
-              <div className="text-[10px] text-muted font-semibold mb-1">Selected Robot</div>
-              <div className="font-bold text-[14px]">{selectedRobot.label}</div>
+              <div className="text-[10px] text-muted font-semibold mb-1">Selected Object</div>
+              <div className="font-bold text-[14px]">ROBOT</div>
+              <div className="font-mono mt-1">ID: {selectedRobot.id}</div>
             </div>
 
             <div>
@@ -62,18 +64,53 @@ export const InspectorPanel: React.FC = () => {
                 <div className="bg-workspace p-1.5 border border-border rounded-sm">Y: {selectedRobot.y.toFixed(1)}</div>
               </div>
             </div>
-            
-            {/* Demo conflict state */}
-            {selectedRobot.state === 'WAITING' && (
-              <div className="mt-2 p-2 border border-danger bg-[#fdf5f5] rounded-sm">
-                <div className="text-danger font-bold text-[10px] mb-1">⚠ CONFLICT DETECTED</div>
-                <div className="text-[11px] mb-1">Location: I-04</div>
-                <div className="text-[11px] mb-1">Robots: AMR-01, AMR-02</div>
-                <div className="text-[11px] text-muted">Resolution: Rerouting...</div>
-              </div>
-            )}
           </div>
-        ) : (
+        )}
+
+        {selectedObstacle && (
+          <div className="flex flex-col gap-4 text-[12px] text-text">
+            <div>
+              <div className="text-[10px] text-muted font-semibold mb-1">Selected Object</div>
+              <div className="font-bold text-[14px]">OBSTACLE</div>
+              <div className="font-mono mt-1">ID: {selectedObstacle.id}</div>
+            </div>
+
+            <div>
+              <div className="text-[10px] text-muted font-semibold mb-1">Position</div>
+              <div className="font-mono grid grid-cols-2 gap-2">
+                <div className="bg-workspace p-1.5 border border-border rounded-sm">X: {selectedObstacle.x}</div>
+                <div className="bg-workspace p-1.5 border border-border rounded-sm">Y: {selectedObstacle.y}</div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <div className="text-[10px] text-muted font-semibold mb-1">Width</div>
+                <div className="font-mono bg-workspace p-1.5 border border-border rounded-sm">{selectedObstacle.width}</div>
+              </div>
+              <div>
+                <div className="text-[10px] text-muted font-semibold mb-1">Height</div>
+                <div className="font-mono bg-workspace p-1.5 border border-border rounded-sm">{selectedObstacle.height}</div>
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[10px] text-muted font-semibold mb-1">Rotation</div>
+              <div className="font-mono bg-workspace p-1.5 border border-border rounded-sm">0°</div>
+            </div>
+
+            <div className="mt-4 pt-4 border-t border-border flex justify-center">
+              <button 
+                onClick={() => removeObstacle(selectedObstacle.id)}
+                className="px-4 py-1.5 bg-danger text-white rounded-sm hover:bg-opacity-80 font-medium w-full transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        )}
+
+        {!selectedRobot && !selectedObstacle && (
           <div className="text-center text-muted text-[12px] italic mt-10">
             Select an object on the map to inspect properties.
           </div>
@@ -82,4 +119,3 @@ export const InspectorPanel: React.FC = () => {
     </div>
   );
 };
-
