@@ -73,15 +73,7 @@ function snapshotFrom(state: {
     obstacles: state.obstacles,
     pois: state.pois,
     pallets: state.pallets,
-    robots: state.robots.map((r) => ({
-      ...r,
-      path: [],
-      currentTask: null,
-      currentTaskId: null,
-      taskPhase: null,
-      pickupPoint: null,
-      dropPoint: null,
-    })),
+    robots: state.robots.map((r) => ({ ...r })),
     intersections: state.intersections,
     paths: state.paths,
   });
@@ -271,19 +263,27 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
     const result = get().applyLayout();
     if (result.ok) {
       set({ appMode: 'PLAY', pendingPlaceType: null, selectedItemId: null, selectedItemType: null });
+    } else {
+      alert(`Cannot switch to Play mode. There are ${result.issues.filter(i => i.severity === 'error').length} blocking errors. Please check the Builder Sidebar.`);
     }
   },
 
   setSelectedItem: (id, type) => set({ selectedItemId: id, selectedItemType: type, pendingPlaceType: null }),
   toggleSimulation: () => {
     const { appMode, isRunning } = get();
-    if (appMode !== 'PLAY') return;
+    if (appMode !== 'PLAY') {
+      get().startSimulation();
+      return;
+    }
     set({ isRunning: !isRunning });
   },
   startSimulation: () => {
     if (get().appMode !== 'PLAY') {
       const result = get().applyLayout();
-      if (!result.ok) return;
+      if (!result.ok) {
+        alert("Cannot start simulation. Fix layout errors first.");
+        return;
+      }
       set({ appMode: 'PLAY', isRunning: true, pendingPlaceType: null });
       return;
     }
@@ -421,6 +421,13 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
         if (r.id !== id) return r;
         const next = { ...r, ...updates };
         const pos = clampMove(next.row, next.col, 1, 1, state);
+        
+        // If moved in builder mode, clear its path and task to prevent teleportation
+        const moved = pos.row !== r.row || pos.col !== r.col;
+        if (state.appMode === 'BUILDER' && moved) {
+          return { ...next, ...pos, path: [], state: 'WAITING', currentTask: null, currentTaskId: null, taskPhase: null, pickupPoint: null, dropPoint: null };
+        }
+        
         return { ...next, ...pos };
       }),
     };
