@@ -3,21 +3,70 @@ export type Point = {
   y: number;
 };
 
-export type Shelf = {
-  id: string;
+export type Vec3 = { x: number; y: number; z: number };
+
+export type GridOccupant = {
   row: number;
   col: number;
   width: number;
   height: number;
 };
 
-export type Obstacle = {
-  id: string;
-  row: number;
-  col: number;
-  width: number;
-  height: number;
+/** Visual transform in world space. Grid occupancy remains row/col/width/height. */
+export type ObjectTransform = {
+  posY: number;
+  rotX: number;
+  rotY: number;
+  rotZ: number;
+  scale: Vec3;
 };
+
+export const DEFAULT_TRANSFORM: ObjectTransform = {
+  posY: 0,
+  rotX: 0,
+  rotY: 0,
+  rotZ: 0,
+  scale: { x: 1, y: 1, z: 1 },
+};
+
+export type AppMode = 'BUILDER' | 'PLAY';
+export type ViewMode = '2D' | '3D';
+export type TransformMode = 'translate' | 'rotate' | 'scale';
+export type PlaceableType = 'SHELF' | 'OBSTACLE' | 'ROBOT' | 'PICKUP' | 'DROP' | 'CHARGER' | 'PALLET';
+export type SelectedItemType =
+  | 'ROBOT'
+  | 'SHELF'
+  | 'OBSTACLE'
+  | 'POI'
+  | 'INTERSECTION'
+  | 'PALLET'
+  | 'FLOOR'
+  | 'WALL'
+  | null;
+
+export type WallSide = 'NORTH' | 'SOUTH' | 'EAST' | 'WEST';
+
+export type Wall = {
+  id: string;
+  side: WallSide;
+  height: number;
+  thickness: number;
+};
+
+export type Pallet = GridOccupant &
+  ObjectTransform & {
+    id: string;
+  };
+
+export type Shelf = GridOccupant &
+  Partial<ObjectTransform> & {
+    id: string;
+  };
+
+export type Obstacle = GridOccupant &
+  Partial<ObjectTransform> & {
+    id: string;
+  };
 
 export type Intersection = {
   id: string;
@@ -37,7 +86,7 @@ export type PointOfInterest = {
   row: number;
   col: number;
   label: string;
-};
+} & Partial<ObjectTransform>;
 
 export type RobotState = 'IDLE' | 'MOVING' | 'CHARGING' | 'ERROR' | 'WAITING';
 
@@ -55,6 +104,19 @@ export type Robot = {
   pickupPoint?: { row: number, col: number, label: string } | null;
   dropPoint?: { row: number, col: number, label: string } | null;
   path: {row: number, col: number}[];
+} & Partial<ObjectTransform>;
+
+export type LayoutSnapshot = {
+  gridRows: number;
+  gridCols: number;
+  walls: Wall[];
+  shelves: Shelf[];
+  obstacles: Obstacle[];
+  pois: PointOfInterest[];
+  pallets: Pallet[];
+  robots: Robot[];
+  intersections: Intersection[];
+  paths: Path[];
 };
 
 export type CommPriority = 'NORMAL' | 'IMPORTANT' | 'WARNING' | 'CRITICAL';

@@ -262,16 +262,21 @@ interface TaskState {
   // Persistence
   saveTasks: () => string;
   loadTasks: (jsonContent: string) => boolean;
+  clearTasks: () => void;
 
   // Event subscription
   subscribeToTaskEvents: (listener: TaskEventListener) => () => void;
 }
 
-export const useTaskStore = create<TaskState>((set, get) => ({
-  tasks: INITIAL_DEMO_TASKS,
-  activeView: 'WAREHOUSE',
+import { persist } from 'zustand/middleware';
 
-  setActiveView: (view) => set({ activeView: view }),
+export const useTaskStore = create<TaskState>()(
+  persist(
+    (set, get) => ({
+      tasks: INITIAL_DEMO_TASKS,
+      activeView: 'WAREHOUSE',
+
+      setActiveView: (view) => set({ activeView: view }),
 
   createTask: (taskData) => {
     const generatedId = generateNextTaskId(get().tasks);
@@ -576,4 +581,13 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       eventListeners.delete(listener);
     };
   },
-}));
+  
+  clearTasks: () => {
+    set({ tasks: [] });
+  }
+}),
+  {
+    name: 'task-store-storage',
+  }
+)
+);

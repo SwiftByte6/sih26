@@ -6,6 +6,7 @@ export interface PathfindingState {
   gridCols: number;
   obstacles: { row: number; col: number; width: number; height: number }[];
   shelves: { row: number; col: number; width: number; height: number }[];
+  pallets?: { row: number; col: number; width: number; height: number }[];
 }
 
 export function isWalkable(state: PathfindingState, row: number, col: number): boolean {
@@ -22,6 +23,14 @@ export function isWalkable(state: PathfindingState, row: number, col: number): b
   for (const shelf of state.shelves) {
     if (row >= shelf.row && row < shelf.row + shelf.height && col >= shelf.col && col < shelf.col + shelf.width) {
       return false;
+    }
+  }
+
+  if (state.pallets) {
+    for (const pallet of state.pallets) {
+      if (row >= pallet.row && row < pallet.row + pallet.height && col >= pallet.col && col < pallet.col + pallet.width) {
+        return false;
+      }
     }
   }
   

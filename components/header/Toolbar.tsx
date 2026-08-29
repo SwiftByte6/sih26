@@ -1,8 +1,75 @@
 'use client';
 
 import React, { useState } from 'react';
-import { File, FolderOpen, Save, Undo, Redo, MousePointer2, Move, ZoomIn, ZoomOut, Maximize, Grid3X3, Play, Upload } from 'lucide-react';
+import { File, FolderOpen, Save, Undo, Redo, MousePointer2, Move, ZoomIn, ZoomOut, Maximize, Grid3X3, Play, Upload, Radar } from 'lucide-react';
 import { useWarehouseStore } from '../../store/warehouseStore';
+
+function ModeViewToggles() {
+  const appMode = useWarehouseStore((s) => s.appMode);
+  const setAppMode = useWarehouseStore((s) => s.setAppMode);
+  const viewMode = useWarehouseStore((s) => s.viewMode);
+  const setViewMode = useWarehouseStore((s) => s.setViewMode);
+  const applyLayout = useWarehouseStore((s) => s.applyLayout);
+  const showSensors = useWarehouseStore((s) => s.showSensors);
+  const toggleSensors = useWarehouseStore((s) => s.toggleSensors);
+
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex items-center gap-1">
+        <span className="text-[10px] font-bold text-muted tracking-wider">MODE</span>
+        <div className="flex bg-app border border-border rounded-sm overflow-hidden">
+          <button
+            className={`px-2 py-1 text-[11px] font-semibold ${appMode === 'BUILDER' ? 'bg-accent text-white' : 'text-text hover:bg-toolbar'}`}
+            onClick={() => setAppMode('BUILDER')}
+          >
+            BUILDER
+          </button>
+          <button
+            className={`px-2 py-1 text-[11px] font-semibold ${appMode === 'PLAY' ? 'bg-accent text-white' : 'text-text hover:bg-toolbar'}`}
+            onClick={() => setAppMode('PLAY')}
+          >
+            PLAY
+          </button>
+        </div>
+      </div>
+      <div className="flex items-center gap-1">
+        <span className="text-[10px] font-bold text-muted tracking-wider">VIEW</span>
+        <div className="flex bg-app border border-border rounded-sm overflow-hidden">
+          <button
+            className={`px-2 py-1 text-[11px] font-semibold ${viewMode === '2D' ? 'bg-white text-accent' : 'text-text hover:bg-toolbar'}`}
+            onClick={() => setViewMode('2D')}
+          >
+            2D
+          </button>
+          <button
+            className={`px-2 py-1 text-[11px] font-semibold ${viewMode === '3D' ? 'bg-white text-accent' : 'text-text hover:bg-toolbar'}`}
+            onClick={() => setViewMode('3D')}
+          >
+            3D
+          </button>
+        </div>
+      </div>
+      <button
+        className={`flex items-center gap-1 px-2 py-1 rounded-sm text-[11px] border ${showSensors ? 'bg-accent text-white border-accent' : 'border-border text-muted'}`}
+        onClick={toggleSensors}
+        title="Sensor visualization"
+      >
+        <Radar size={12} />
+      </button>
+      {appMode === 'BUILDER' && (
+        <button
+          className="px-2 py-1 bg-success text-white rounded-sm text-[11px] font-semibold"
+          onClick={() => {
+            const res = applyLayout();
+            if (!res.ok) alert(`Cannot apply layout. There are ${res.issues.filter(i => i.severity === 'error').length} blocking errors. Please check the Builder Sidebar.`);
+          }}
+        >
+          APPLY LAYOUT
+        </button>
+      )}
+    </div>
+  );
+}
 
 const TOOLBAR_GROUPS = [
   [
@@ -128,6 +195,10 @@ export const Toolbar: React.FC = () => {
         </button>
         
         <div className="flex-1" />
+
+        <div className="flex items-center gap-3 mr-3">
+          <ModeViewToggles />
+        </div>
         
         <button 
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-[12px] font-medium transition-colors mr-2 ${
