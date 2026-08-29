@@ -138,6 +138,7 @@ interface WarehouseState {
   cellSize: number;
   metersPerCell: number;
   gridSnap: number;
+  collisionsCount: number;
 
   communications: CommunicationMessage[];
   activeCommLinks: ActiveCommLink[];
@@ -240,6 +241,7 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
   cellSize: 20,
   metersPerCell: 1,
   gridSnap: 1,
+  collisionsCount: 0,
 
   communications: [],
   activeCommLinks: [],
@@ -292,7 +294,7 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
   pauseSimulation: () => set({ isRunning: false }),
   stopSimulation: () => set({ isRunning: false }),
   resetSimulation: () => {
-    useTaskStore.getState().clearTasks();
+    useTaskStore.getState().resetTasks();
     const layout = get().savedLayout;
     const cloned = cloneLayout(layout);
     set({
@@ -311,6 +313,7 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
       selectedItemType: null,
       communications: [],
       activeCommLinks: [],
+      collisionsCount: 0,
     });
   },
   setScale: (scale) => set({ scale }),
@@ -410,22 +413,40 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
     };
   }),
   updateRobot: (id, updates) => set((state) => {
-    if (state.appMode === 'PLAY' && (updates.row !== undefined || updates.col !== undefined)) {
-      const rest = { ...updates };
-      delete rest.row;
-      delete rest.col;
-      return { robots: state.robots.map((r) => (r.id === id ? { ...r, ...rest } : r)) };
-    }
     return {
       robots: state.robots.map((r) => {
         if (r.id !== id) return r;
         const next = { ...r, ...updates };
         const pos = clampMove(next.row, next.col, 1, 1, state);
-        
-        // If moved in builder mode, clear its path and task to prevent teleportation
         const moved = pos.row !== r.row || pos.col !== r.col;
-        if (state.appMode === 'BUILDER' && moved) {
-          return { ...next, ...pos, path: [], state: 'WAITING', currentTask: null, currentTaskId: null, taskPhase: null, pickupPoint: null, dropPoint: null };
+        
+        if (moved) {
+          if (state.appMode === 'BUILDER') {
+            return { 
+              ...next, 
+              ...pos, 
+              path: [], 
+              state: 'WAITING', 
+              currentTask: null, 
+              currentTaskId: null, 
+              taskPhase: null, 
+              pickupPoint: null, 
+              dropPoint: null 
+            };
+          } else {
+            // In PLAY mode, recalculate path from new position
+            let newPath: { row: number; col: number }[] = [];
+            const targetCoord = r.taskPhase === 'TO_PICKUP' ? r.pickupPoint : r.taskPhase === 'TO_DROP' ? r.dropPoint : null;
+            if (targetCoord) {
+              newPath = findPathAStar(state, pos.row, pos.col, targetCoord.row, targetCoord.col);
+            }
+            return {
+              ...next,
+              ...pos,
+              path: newPath,
+              state: newPath.length === 0 && targetCoord ? 'WAITING' : r.state
+            };
+          }
         }
         
         return { ...next, ...pos };
@@ -571,7 +592,7 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
       appMode: 'PLAY',
       pendingPlaceType: null,
     });
-    useTaskStore.getState().clearTasks();
+    useTaskStore.getState().resetTasks();
     return { ok: true, issues };
   },
 
@@ -596,6 +617,82 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
     // Expire old visual links
     const activeLinks = state.activeCommLinks.filter(l => l.expires > now);
 
+    // 1. Conflict Resolution Phase (Pre-tick 2-step lookahead check)
+    let coordinatedRobots = state.robots.map(r => ({ ...r, path: [...r.path] }));
+    
+    // Resolve conflicts iteratively (max 5 passes)
+    for (let pass = 0; pass < 5; pass++) {
+      let conflictResolved = false;
+      
+      for (let i = 0; i < coordinatedRobots.length; i++) {
+        const r1 = coordinatedRobots[i];
+        if (r1.state !== 'MOVING' || r1.path.length === 0) continue;
+        
+        const next1 = r1.path[0];
+        const next1_2 = r1.path.length > 1 ? r1.path[1] : null;
+        
+        for (let j = i + 1; j < coordinatedRobots.length; j++) {
+          const r2 = coordinatedRobots[j];
+          if (r2.state !== 'MOVING' || r2.path.length === 0) continue;
+          
+          const next2 = r2.path[0];
+          const next2_2 = r2.path.length > 1 ? r2.path[1] : null;
+          
+          let hasConflict = false;
+          let conflictCell = null;
+          
+          // Case 1: Next cell overlap (Step 1)
+          if (next1.row === next2.row && next1.col === next2.col) {
+            hasConflict = true;
+            conflictCell = next1;
+          }
+          // Case 2: Step 2 overlap
+          else if (next1_2 && next2_2 && next1_2.row === next2_2.row && next1_2.col === next2_2.col) {
+            hasConflict = true;
+            conflictCell = next1_2;
+          }
+          // Case 3: Swap overlap (passing through each other)
+          else if (next1.row === r2.row && next1.col === r2.col && next2.row === r1.row && next2.col === r1.col) {
+            hasConflict = true;
+            conflictCell = next1;
+          }
+          
+          if (hasConflict && conflictCell) {
+            const r1Dist = r1.path.length;
+            const r2Dist = r2.path.length;
+            // Longer remaining path yields, tie-breaker is alphabetical ID
+            const r1Yields = r1Dist > r2Dist || (r1Dist === r2Dist && r1.id > r2.id);
+            
+            const yielder = r1Yields ? r1 : r2;
+            const target = yielder.path[yielder.path.length - 1];
+            
+            // Recalculate path for yielder, treating conflictCell as blocked
+            const tempObstacles = [
+              ...state.obstacles,
+              { row: conflictCell.row, col: conflictCell.col, width: 1, height: 1 }
+            ];
+            const tempState = { ...state, obstacles: tempObstacles };
+            const newPath = findPathAStar(tempState, yielder.row, yielder.col, target.row, target.col);
+            
+            if (newPath.length > 0) {
+              yielder.path = newPath;
+              newMessages.push(createMsg(yielder.id, 'ALL', `Conflict detected at (${conflictCell.row},${conflictCell.col}). Recalculating route...`, 'COORDINATION', 'WARNING'));
+            } else {
+              // No bypass route, must yield priority by waiting
+              yielder.path = [];
+              yielder.state = 'WAITING';
+              newMessages.push(createMsg(yielder.id, 'ALL', `Intersection conflict at (${conflictCell.row},${conflictCell.col}). No bypass, waiting.`, 'COORDINATION', 'IMPORTANT'));
+            }
+            
+            conflictResolved = true;
+            break;
+          }
+        }
+        if (conflictResolved) break;
+      }
+      if (!conflictResolved) break;
+    }
+
     const findLocationCoordinates = (locString: string): { row: number, col: number, label: string } | null => {
       const poi = state.pois.find(p => p.label.toLowerCase() === locString.toLowerCase() || p.id.toLowerCase() === locString.toLowerCase());
       if (poi) return { row: poi.row, col: poi.col, label: poi.label };
@@ -606,7 +703,8 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
       return null;
     };
 
-    const updatedRobots = state.robots.map(robot => {
+    // 2. Movement Phase (Execute movements using coordinated paths)
+    const updatedRobots = coordinatedRobots.map(robot => {
       // Robot is idle/waiting -> assign new task
       if (robot.state === 'WAITING' || (robot.state !== 'MOVING' && robot.path.length === 0)) {
         const pendingTasks = taskStore.getPendingTasks();
@@ -651,6 +749,7 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
       if (robot.state === 'MOVING' && robot.path.length > 0) {
         const nextCell = robot.path[0];
         
+        // Static obstacle check
         const isBlocked = state.obstacles.some(o => 
           nextCell.row >= o.row && nextCell.row < o.row + o.height && 
           nextCell.col >= o.col && nextCell.col < o.col + o.width
@@ -671,7 +770,8 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
           }
         }
         
-        const conflictRobot = state.robots.find(r => r.id !== robot.id && r.row === nextCell.row && r.col === nextCell.col);
+        // Dynamic robot same-cell block (movement-time validation)
+        const conflictRobot = coordinatedRobots.find(r => r.id !== robot.id && r.row === nextCell.row && r.col === nextCell.col);
         if (conflictRobot) {
           newMessages.push(createMsg(robot.id, conflictRobot.id, `Collision risk at (${nextCell.row},${nextCell.col}). I'll wait.`, 'COORDINATION', 'WARNING'));
           newLinks.push({ from: robot.id, to: conflictRobot.id, expires: now + 2500 });
@@ -733,6 +833,19 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
       return robot;
     });
 
+    // 3. Post-tick Actual Collision Verification (Double occupying cells)
+    let actualCollisions = 0;
+    for (let i = 0; i < updatedRobots.length; i++) {
+      for (let j = i + 1; j < updatedRobots.length; j++) {
+        const r1 = updatedRobots[i];
+        const r2 = updatedRobots[j];
+        if (r1.row === r2.row && r1.col === r2.col) {
+          actualCollisions++;
+          newMessages.push(createMsg('SYSTEM', 'ALL', `COLLISION ALERT: Robots ${r1.id} & ${r2.id} overlapped at grid cell (${r1.row}, ${r1.col})!`, 'FAILURE', 'CRITICAL'));
+        }
+      }
+    }
+
     const allComms = [...state.communications, ...newMessages];
     if (allComms.length > MAX_MESSAGES) {
       allComms.splice(0, allComms.length - MAX_MESSAGES);
@@ -741,7 +854,8 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
     return { 
       robots: updatedRobots, 
       communications: allComms,
-      activeCommLinks: [...activeLinks, ...newLinks]
+      activeCommLinks: [...activeLinks, ...newLinks],
+      collisionsCount: state.collisionsCount + actualCollisions
     };
   }),
 }));

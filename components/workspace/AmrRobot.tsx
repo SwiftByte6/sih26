@@ -45,9 +45,8 @@ export const AmrRobot: React.FC<AmrRobotProps> = ({ robot }) => {
     <Group 
       x={x} 
       y={y}
-      draggable={builder}
+      draggable
       onDragEnd={(e) => {
-        if (!builder) return;
         updateRobot(robot.id, {
           col: Math.round(e.target.x() / cellSize),
           row: Math.round(e.target.y() / cellSize),
