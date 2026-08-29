@@ -194,16 +194,7 @@ export function cloneLayout(layout: LayoutSnapshot): LayoutSnapshot {
 }
 
 export function robotsForPlay(robots: Robot[]): Robot[] {
-  return robots.map((r) => ({
-    ...r,
-    state: r.state === 'CHARGING' ? 'CHARGING' : 'WAITING',
-    path: [],
-    currentTask: null,
-    currentTaskId: null,
-    taskPhase: null,
-    pickupPoint: null,
-    dropPoint: null,
-  }));
+  return robots.map((r) => ({ ...r }));
 }
 
 export function clampAllToGrid<T extends { row: number; col: number; width?: number; height?: number }>(

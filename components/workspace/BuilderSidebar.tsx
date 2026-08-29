@@ -62,7 +62,10 @@ export const BuilderSidebar: React.FC = () => {
 
       <button
         className="mt-2 px-3 py-2 bg-success text-white text-[12px] font-semibold rounded-sm hover:bg-opacity-90"
-        onClick={() => applyLayout()}
+        onClick={() => {
+          const res = applyLayout();
+          if (!res.ok) alert(`Cannot apply layout. There are ${res.issues.filter(i => i.severity === 'error').length} blocking errors. Please check the Builder Sidebar.`);
+        }}
       >
         APPLY LAYOUT / PLAY
       </button>
