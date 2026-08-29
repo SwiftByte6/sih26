@@ -4,11 +4,13 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useWarehouseStore } from '../../store/warehouseStore';
 import { CommunicationMessageCard } from './CommunicationMessageCard';
 import { CommunicationFilters } from './CommunicationFilters';
-import { Trash2, Pause, Play, ArrowDownToLine } from 'lucide-react';
+import { P2PNetworkTester } from './P2PNetworkTester';
+import { Trash2, Pause, Play, ArrowDownToLine, Radio, MessageSquare } from 'lucide-react';
 
 export const RobotCommunicationPanel: React.FC = () => {
   const { robots, communications, clearCommunications } = useWarehouseStore();
   
+  const [panelMode, setPanelMode] = useState<'COMM_LOG' | 'P2P_MESH'>('COMM_LOG');
   const [selectedRobot, setSelectedRobot] = useState('ALL');
   const [selectedCategory, setSelectedCategory] = useState('ALL');
   const [autoScroll, setAutoScroll] = useState(true);
@@ -51,10 +53,30 @@ export const RobotCommunicationPanel: React.FC = () => {
 
   return (
     <div className="w-[280px] bg-panel border-l border-border flex flex-col flex-shrink-0">
-      {/* Header */}
-      <div className="h-[30px] border-b border-border flex items-center px-3 bg-app">
-        <span className="text-[11px] font-bold text-text tracking-wider">ROBOT COMMUNICATION</span>
+      {/* Header Tabs */}
+      <div className="h-[30px] border-b border-border flex items-center bg-app">
+        <button
+          onClick={() => setPanelMode('COMM_LOG')}
+          className={`flex-1 h-full flex items-center justify-center gap-1 font-bold text-[10px] tracking-wider border-r border-border transition-colors ${
+            panelMode === 'COMM_LOG' ? 'bg-panel text-accent border-b-2 border-b-accent' : 'text-muted hover:text-text'
+          }`}
+        >
+          <MessageSquare size={12} /> COMM LOG
+        </button>
+        <button
+          onClick={() => setPanelMode('P2P_MESH')}
+          className={`flex-1 h-full flex items-center justify-center gap-1 font-bold text-[10px] tracking-wider transition-colors ${
+            panelMode === 'P2P_MESH' ? 'bg-panel text-accent border-b-2 border-b-accent' : 'text-muted hover:text-text'
+          }`}
+        >
+          <Radio size={12} /> P2P MESH
+        </button>
       </div>
+
+      {panelMode === 'P2P_MESH' ? (
+        <P2PNetworkTester />
+      ) : (
+        <>
 
       {/* Robot Status Strip */}
       <div className="px-2 py-1.5 border-b border-border bg-toolbar flex flex-col gap-1">
@@ -133,6 +155,9 @@ export const RobotCommunicationPanel: React.FC = () => {
           </button>
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 };
+

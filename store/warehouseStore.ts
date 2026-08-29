@@ -3,6 +3,7 @@ import { Robot, RobotState, Shelf, Obstacle, Intersection, Path, PointOfInterest
 import { demoWarehouse } from '../data/demoWarehouse';
 import { findPathAStar } from '../engine/pathfinding';
 import { useTaskStore } from './taskStore';
+import { useP2PStore } from './p2pStore';
 
 export type Task = { id: string, targetRow: number, targetCol: number, assignedTo: string | null };
 
@@ -83,15 +84,18 @@ export const useWarehouseStore = create<WarehouseState>((set) => ({
   setSelectedItem: (id, type) => set({ selectedItemId: id, selectedItemType: type }),
   toggleSimulation: () => set((state) => ({ isRunning: !state.isRunning })),
   stopSimulation: () => set({ isRunning: false }),
-  resetSimulation: () => set({ 
-    isRunning: false, 
-    robots: demoWarehouse.robots,
-    obstacles: demoWarehouse.obstacles,
-    selectedItemId: null,
-    selectedItemType: null,
-    communications: [],
-    activeCommLinks: []
-  }),
+  resetSimulation: () => {
+    useP2PStore.getState().resetP2PNetwork();
+    set({ 
+      isRunning: false, 
+      robots: demoWarehouse.robots,
+      obstacles: demoWarehouse.obstacles,
+      selectedItemId: null,
+      selectedItemType: null,
+      communications: [],
+      activeCommLinks: []
+    });
+  },
   setScale: (scale) => set({ scale }),
   setPan: (pan) => set({ pan }),
   toggleGrid: () => set((state) => ({ showGrid: !state.showGrid })),
@@ -126,6 +130,9 @@ export const useWarehouseStore = create<WarehouseState>((set) => ({
 
   tick: () => set((state) => {
     if (!state.isRunning) return state;
+
+    // Process P2P Heartbeats & Peer Discovery in Simulated Network
+    useP2PStore.getState().processHeartbeats();
 
     const taskStore = useTaskStore.getState();
     const now = Date.now();
@@ -294,3 +301,6 @@ export const useWarehouseStore = create<WarehouseState>((set) => ({
     };
   }),
 }));
+
+// Initialize P2P Network with default robots on module load
+useP2PStore.getState().initializeNetwork(demoWarehouse.robots.map((r) => r.id));
