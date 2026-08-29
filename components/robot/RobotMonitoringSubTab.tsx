@@ -33,7 +33,10 @@ export const RobotMonitoringSubTab: React.FC = () => {
                 <th className="py-2.5 px-3">Load / Cap</th>
                 <th className="py-2.5 px-3">Signal</th>
                 <th className="py-2.5 px-3">Temp</th>
+                <th className="py-2.5 px-3">Failure Status</th>
+                <th className="py-2.5 px-3">Recovery State</th>
                 <th className="py-2.5 px-3">P2P Status</th>
+                <th className="py-2.5 px-3">Failure Simulation</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/60">
@@ -41,6 +44,8 @@ export const RobotMonitoringSubTab: React.FC = () => {
                 const isSelected = selectedItemId === robot.id;
                 const p2pNode = p2pNodes[robot.id];
                 const isOnline = p2pNode ? p2pNode.isOnline : (robot.isOnline ?? true);
+                const failStatus = robot.failureStatus || (robot.state === 'ERROR' ? 'ERROR' : isOnline ? 'NORMAL' : 'OFFLINE');
+                const recStatus = robot.recoveryStatus || 'NONE';
 
                 return (
                   <tr
@@ -60,7 +65,7 @@ export const RobotMonitoringSubTab: React.FC = () => {
                         robot.state === 'MOVING' ? 'bg-accent text-white' :
                         robot.state === 'WAITING' ? 'bg-warning text-white' :
                         robot.state === 'WAITING_FOR_PATH_CLEARANCE' ? 'bg-amber-600 text-white font-mono' :
-                        robot.state === 'CHARGING' ? 'bg-success text-white' : 'bg-muted text-white'
+                        robot.state === 'CHARGING' ? 'bg-success text-white' : 'bg-red-600 text-white'
                       }`}>
                         {robot.state === 'WAITING_FOR_PATH_CLEARANCE' ? 'PATH BLOCKED (YIELDING)' : robot.state}
                       </span>
@@ -104,12 +109,69 @@ export const RobotMonitoringSubTab: React.FC = () => {
                     </td>
 
                     <td className="py-3 px-3">
-                      {isOnline ? (
+                      <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
+                        failStatus === 'NORMAL' ? 'bg-emerald-100 text-emerald-800' :
+                        failStatus === 'OFFLINE' ? 'bg-red-100 text-red-800' :
+                        failStatus === 'COMMUNICATION_LOST' ? 'bg-amber-100 text-amber-800' : 'bg-red-200 text-red-900'
+                      }`}>
+                        {failStatus}
+                      </span>
+                    </td>
+
+                    <td className="py-3 px-3">
+                      <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
+                        recStatus === 'NONE' ? 'bg-gray-100 text-gray-700' :
+                        recStatus === 'RECOVERY_IN_PROGRESS' ? 'bg-amber-100 text-amber-800 animate-pulse' : 'bg-blue-100 text-blue-800'
+                      }`}>
+                        {recStatus === 'RECOVERY_IN_PROGRESS' ? 'IN PROGRESS' : recStatus}
+                      </span>
+                    </td>
+
+                    <td className="py-3 px-3">
+                      {isOnline && robot.state !== 'ERROR' ? (
                         <span className="text-success font-bold flex items-center gap-1">
                           <ShieldCheck size={13} /> CONNECTED
                         </span>
                       ) : (
                         <span className="text-danger font-bold">DISCONNECTED</span>
+                      )}
+                    </td>
+
+                    <td className="py-3 px-3 flex gap-1">
+                      {failStatus === 'NORMAL' ? (
+                        <>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const triggerRobotFailure = require('../../engine/recovery/FailureRecoveryManager').triggerRobotFailure;
+                              triggerRobotFailure(robot.id, 'OFFLINE');
+                            }}
+                            className="px-2 py-1 bg-red-500 text-white rounded text-[9px] font-bold hover:bg-red-600"
+                          >
+                            Fail Offline
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const triggerRobotFailure = require('../../engine/recovery/FailureRecoveryManager').triggerRobotFailure;
+                              triggerRobotFailure(robot.id, 'ERROR');
+                            }}
+                            className="px-2 py-1 bg-amber-500 text-white rounded text-[9px] font-bold hover:bg-amber-600"
+                          >
+                            Fail Error
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const restoreRobot = require('../../engine/recovery/FailureRecoveryManager').restoreRobot;
+                            restoreRobot(robot.id);
+                          }}
+                          className="px-2 py-1 bg-emerald-600 text-white rounded text-[9px] font-bold hover:bg-emerald-700"
+                        >
+                          Restore AMR
+                        </button>
                       )}
                     </td>
                   </tr>

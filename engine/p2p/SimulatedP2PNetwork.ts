@@ -105,6 +105,80 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
         };
       }
 
+      // Handle ROBOT_FAILURE (Phase 5): Peer nodes update local peer knowledge table
+      if (message.type === 'ROBOT_FAILURE' && message.payload?.robotId) {
+        const failedId = message.payload.robotId;
+        if (targetNode.peerList[failedId]) {
+          targetNode.peerList[failedId].status = 'OFFLINE';
+          targetNode.peerList[failedId].lastKnownState = 'ERROR';
+        }
+      }
+
+      // Handle TASK_RECOVERY_ANNOUNCEMENT (Phase 5): Exclude failed AMR, evaluate task, and bid
+      if (message.type === 'TASK_RECOVERY_ANNOUNCEMENT' && message.payload?.taskId) {
+        const payload = message.payload;
+        const taskId = payload.taskId;
+
+        const warehouseStore = require('../../store/warehouseStore').useWarehouseStore.getState();
+        const robotState = warehouseStore.robots.find((r: any) => r.id === targetNode.robotId);
+
+        // Failed robot and offline AMRs are strictly excluded
+        if (robotState && robotState.isOnline && robotState.state !== 'ERROR' && targetNode.robotId !== payload.failedRobotId) {
+          targetNode.knownTasks = targetNode.knownTasks || {};
+          const recoveryRound = payload.recoveryRound || 1;
+
+          targetNode.knownTasks[taskId] = {
+            task: payload.taskData,
+            announcementTimestamp: message.timestamp,
+            allocationRound: recoveryRound,
+            allocationState: 'ANNOUNCED',
+            peerBids: {},
+            peerProposals: {},
+            myBidSent: false,
+            myProposalSent: false,
+            claimedBy: null,
+          };
+
+          const evaluateTask = require('../evaluation/TaskEvaluator').evaluateTask;
+          const evalResult = evaluateTask(
+            robotState,
+            payload.taskData,
+            warehouseStore.pois,
+            warehouseStore.shelves
+          );
+
+          const taskKnowledge = targetNode.knownTasks[taskId];
+          taskKnowledge.evaluation = evalResult;
+          taskKnowledge.allocationState = 'EVALUATING';
+
+          taskKnowledge.peerBids[targetNode.robotId] = {
+            robotId: targetNode.robotId,
+            timestamp: message.timestamp,
+            eligible: evalResult.eligible,
+            suitabilityScore: evalResult.suitabilityScore,
+            evaluation: evalResult,
+          };
+
+          if (evalResult.eligible && !taskKnowledge.myBidSent) {
+            taskKnowledge.myBidSent = true;
+            taskKnowledge.allocationState = 'BIDDING';
+            setTimeout(() => {
+              this.broadcastMessage(targetNode.robotId, 'TASK_BID', {
+                taskId,
+                robotId: targetNode.robotId,
+                allocationRound: recoveryRound,
+                isRecovery: true,
+                taskPhase: payload.taskPhase,
+                lastKnownPosition: payload.lastKnownPosition,
+                eligible: true,
+                suitabilityScore: evalResult.suitabilityScore,
+                body: `TASK_BID (RECOVERY): ${taskId} | Suitability: ${evalResult.suitabilityScore}/100`,
+              });
+            }, 0);
+          }
+        }
+      }
+
       // Handle TASK_ANNOUNCEMENT: Store local task knowledge, trigger Phase 4A evaluation, and broadcast TASK_BID if eligible
       if (message.type === 'TASK_ANNOUNCEMENT' && message.payload?.task) {
         const task = message.payload.task;
@@ -224,8 +298,14 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
               evaluation: message.payload.evaluation,
             };
 
-            // Fix 3: Wait for expected bids from online nodes before determining winner
-            const onlineNodesCount = Object.values(this.nodes).filter((n) => n.isOnline).length;
+            // Fix 3 & Phase 5: Wait for expected bids from online, non-failed nodes before determining winner
+            const warehouseStoreState = require('../../store/warehouseStore').useWarehouseStore.getState();
+            const onlineNodesCount = Object.values(this.nodes).filter((n) => {
+              if (!n.isOnline) return false;
+              const r = warehouseStoreState.robots.find((bot: any) => bot.id === n.robotId);
+              return r && r.isOnline !== false && r.state !== 'ERROR';
+            }).length;
+
             const receivedBidsCount = Object.keys(taskKnowledge.peerBids).length;
 
             if (!taskKnowledge.myProposalSent && !taskKnowledge.claimedBy && receivedBidsCount >= Math.max(1, onlineNodesCount)) {
@@ -328,7 +408,15 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
 
           const warehouseStore = useWarehouseStore();
           const task = taskStore.getTask(taskId);
-          if (task) {
+          if (task && task.recoveryAudit?.failedRobotId) {
+            const executeRecoveryAssignment = require('../recovery/FailureRecoveryManager').executeRecoveryAssignment;
+            executeRecoveryAssignment(
+              ownerRobotId,
+              task,
+              task.recoveryAudit.recoveryPhase || 'TO_PICKUP',
+              message.payload?.lastKnownPosition || { col: 5, row: 5 }
+            );
+          } else if (task) {
             warehouseStore.assignTaskToRobot(ownerRobotId, task);
           }
         } catch (e) {}

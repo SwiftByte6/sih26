@@ -343,6 +343,12 @@ export const TaskManagementPanel: React.FC = () => {
                       </td>
                       <td className="p-3 border-r border-border">
                         {renderStatusBadge(t.status)}
+                        {t.recoveryAudit && (
+                          <div className="mt-1.5 p-1.5 bg-amber-50 border border-amber-300 text-amber-950 rounded text-[10px] font-mono leading-tight max-w-[280px]">
+                            <span className="font-bold uppercase tracking-wider text-[9px] text-amber-900 block mb-0.5">🔄 Decen Recovery:</span>
+                            {t.recoveryAudit.failedRobotId} FAILED → {t.recoveryAudit.recoveredRobotId || 'RECOVERING...'}
+                          </div>
+                        )}
                         {t.status === 'FAILED' && t.failure_reason && (
                           <div className="mt-1.5 p-1.5 bg-rose-100 border border-rose-300 text-rose-950 rounded text-[10px] font-mono leading-tight max-w-[280px]">
                             <span className="font-bold uppercase tracking-wider text-[9px] text-rose-900 block mb-0.5">⚠️ Failure Reason:</span>

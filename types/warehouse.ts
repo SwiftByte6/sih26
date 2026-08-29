@@ -64,6 +64,8 @@ export type Robot = {
   signalStrength?: number;      // in %
   deliveryCapability?: string;  // e.g. "Standard Transport"
   isOnline?: boolean;
+  failureStatus?: 'NORMAL' | 'OFFLINE' | 'ERROR' | 'COMMUNICATION_LOST';
+  recoveryStatus?: 'NONE' | 'RECOVERY_IN_PROGRESS' | 'RECOVERED';
 };
 
 

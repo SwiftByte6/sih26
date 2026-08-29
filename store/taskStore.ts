@@ -635,6 +635,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   },
 
   failTask: (taskId, reason = 'Execution failed') => {
+    const originalTask = get().getTask(taskId);
     set((state) => ({
       tasks: state.tasks.map((t) =>
         t.task_id === taskId
@@ -649,6 +650,23 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     }));
     const task = get().getTask(taskId);
     if (task) notifyListeners('TASK_FAILED', task, { reason });
+
+    // Phase 5 Failure Recovery Hook: If failure is recoverable, initiate decentralized recovery
+    if (originalTask && originalTask.assigned_robot_id) {
+      const isNonRecoverable = /unreachable for all amrs|invalid source|invalid target/i.test(reason);
+      if (!isNonRecoverable) {
+        try {
+          const handlePeerRobotFailure = require('../engine/recovery/FailureRecoveryManager').handlePeerRobotFailure;
+          handlePeerRobotFailure({
+            robotId: originalTask.assigned_robot_id,
+            failureType: 'ERROR',
+            currentTaskId: taskId,
+            position: { col: 5, row: 5 },
+            timestamp: Date.now(),
+          });
+        } catch (e) {}
+      }
+    }
   },
 
   reassignTask: (taskId, reason = 'Reassignment triggered') => {
