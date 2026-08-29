@@ -50,6 +50,10 @@ export type Robot = {
   battery: number;
   speed: number;
   currentTask: string | null;
+  currentTaskId?: string | null;
+  taskPhase?: 'TO_PICKUP' | 'TO_DROP' | null;
+  pickupPoint?: { row: number, col: number, label: string } | null;
+  dropPoint?: { row: number, col: number, label: string } | null;
   path: {row: number, col: number}[];
 };
 
