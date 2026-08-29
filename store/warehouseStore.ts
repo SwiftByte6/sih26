@@ -55,6 +55,10 @@ interface WarehouseState {
   updateObstacle: (id: string, updates: Partial<Obstacle>) => void;
   removeObstacle: (id: string) => void;
   
+  addRobot: (robotData: Partial<Robot> & { id: string }) => void;
+  updateRobot: (id: string, updates: Partial<Robot>) => void;
+  removeRobot: (id: string) => void;
+
   addCommunication: (msg: CommunicationMessage) => void;
   clearCommunications: () => void;
   
@@ -117,6 +121,55 @@ export const useWarehouseStore = create<WarehouseState>((set) => ({
     selectedItemId: state.selectedItemId === id ? null : state.selectedItemId,
     selectedItemType: state.selectedItemId === id ? null : state.selectedItemType
   })),
+
+  addRobot: (robotData) => set((state) => {
+    const newRobot: Robot = {
+      id: robotData.id,
+      label: robotData.label || robotData.id,
+      row: robotData.row ?? 10,
+      col: robotData.col ?? 10,
+      state: robotData.state || 'IDLE',
+      battery: robotData.battery ?? 100,
+      speed: robotData.speed ?? 1.2,
+      currentTask: null,
+      currentTaskId: null,
+      taskPhase: null,
+      pickupPoint: null,
+      dropPoint: null,
+      path: [],
+      sensingRadius: robotData.sensingRadius ?? 5,
+      payloadCapacity: robotData.payloadCapacity ?? 20,
+      currentLoad: robotData.currentLoad ?? 0,
+      temperature: robotData.temperature ?? 35,
+      signalStrength: robotData.signalStrength ?? 95,
+      deliveryCapability: robotData.deliveryCapability || 'Standard Transport',
+      isOnline: true,
+    };
+
+    useP2PStore.getState().network.registerNode(newRobot.id);
+    useP2PStore.getState().processHeartbeats();
+
+    return {
+      robots: [...state.robots, newRobot],
+      selectedItemId: newRobot.id,
+      selectedItemType: 'ROBOT'
+    };
+  }),
+
+  updateRobot: (id, updates) => set((state) => ({
+    robots: state.robots.map(r => r.id === id ? { ...r, ...updates } : r)
+  })),
+
+  removeRobot: (id) => set((state) => {
+    useP2PStore.getState().network.unregisterNode(id);
+    useP2PStore.getState().processHeartbeats();
+
+    return {
+      robots: state.robots.filter(r => r.id !== id),
+      selectedItemId: state.selectedItemId === id ? null : state.selectedItemId,
+      selectedItemType: state.selectedItemId === id ? null : state.selectedItemType
+    };
+  }),
   
   addCommunication: (msg) => set((state) => {
     const updated = [...state.communications, msg];

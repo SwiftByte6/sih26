@@ -230,9 +230,9 @@ const notifyListeners = (type: TaskEventType, task: Task, metadata?: Record<stri
 
 interface TaskState {
   tasks: Task[];
-  activeView: 'WAREHOUSE' | 'TASKS';
+  activeView: 'WAREHOUSE' | 'TASKS' | 'ROBOTS';
 
-  setActiveView: (view: 'WAREHOUSE' | 'TASKS') => void;
+  setActiveView: (view: 'WAREHOUSE' | 'TASKS' | 'ROBOTS') => void;
 
   // Task Creation
   createTask: (taskData: Omit<Task, 'task_id' | 'created_time' | 'assigned_time' | 'started_time' | 'completed_time' | 'failed_time' | 'reassigned_count' | 'failure_reason' | 'status' | 'assigned_robot_id'>) => { success: boolean; taskId: string; error?: string };

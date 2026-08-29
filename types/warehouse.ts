@@ -55,7 +55,17 @@ export type Robot = {
   pickupPoint?: { row: number, col: number, label: string } | null;
   dropPoint?: { row: number, col: number, label: string } | null;
   path: {row: number, col: number}[];
+
+  // Hardware Telemetry & Capability (Phase 2)
+  sensingRadius?: number;       // in meters
+  payloadCapacity?: number;     // in kg
+  currentLoad?: number;         // in kg
+  temperature?: number;         // in °C
+  signalStrength?: number;      // in %
+  deliveryCapability?: string;  // e.g. "Standard Transport"
+  isOnline?: boolean;
 };
+
 
 export type CommPriority = 'NORMAL' | 'IMPORTANT' | 'WARNING' | 'CRITICAL';
 export type CommCategory = 'NAVIGATION' | 'TASK' | 'COORDINATION' | 'SAFETY' | 'OBSTACLE' | 'BATTERY' | 'FAILURE' | 'RECOVERY' | 'SYSTEM';

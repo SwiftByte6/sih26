@@ -46,22 +46,29 @@ export const demoWarehouse = {
 
   robots: [
     {
-      id: 'R1',
+      id: 'AMR-01',
       label: 'AMR-01',
       col: 10,
       row: 11,
       state: 'MOVING',
       battery: 78,
       speed: 1.4,
-      currentTask: 'PICK-4',
-      currentTaskId: null,
-      taskPhase: null,
+      currentTask: 'T-001',
+      currentTaskId: 'T-001',
+      taskPhase: 'TO_PICKUP',
       pickupPoint: null,
       dropPoint: null,
-      path: [{ col: 10, row: 11 }, { col: 16, row: 11 }]
+      path: [{ col: 10, row: 11 }, { col: 16, row: 11 }],
+      sensingRadius: 5,
+      payloadCapacity: 20,
+      currentLoad: 10,
+      temperature: 38,
+      signalStrength: 94,
+      deliveryCapability: 'Standard Transport',
+      isOnline: true,
     },
     {
-      id: 'R2',
+      id: 'AMR-02',
       label: 'AMR-02',
       col: 16,
       row: 17,
@@ -73,10 +80,17 @@ export const demoWarehouse = {
       taskPhase: null,
       pickupPoint: null,
       dropPoint: null,
-      path: []
+      path: [],
+      sensingRadius: 5,
+      payloadCapacity: 25,
+      currentLoad: 0,
+      temperature: 35,
+      signalStrength: 88,
+      deliveryCapability: 'Heavy Transport',
+      isOnline: true,
     },
     {
-      id: 'R3',
+      id: 'AMR-03',
       label: 'AMR-03',
       col: 3,
       row: 11,
@@ -88,7 +102,15 @@ export const demoWarehouse = {
       taskPhase: null,
       pickupPoint: null,
       dropPoint: null,
-      path: []
+      path: [],
+      sensingRadius: 5,
+      payloadCapacity: 15,
+      currentLoad: 0,
+      temperature: 32,
+      signalStrength: 99,
+      deliveryCapability: 'Express Lightweight',
+      isOnline: true,
     }
   ] as Robot[]
 };
+

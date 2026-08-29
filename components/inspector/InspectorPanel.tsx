@@ -2,12 +2,18 @@
 
 import React from 'react';
 import { useWarehouseStore } from '../../store/warehouseStore';
+import { useP2PStore } from '../../store/p2pStore';
 
 export const InspectorPanel: React.FC = () => {
   const { selectedItemId, selectedItemType, robots, obstacles, removeObstacle } = useWarehouseStore();
+  const p2pNodes = useP2PStore((state) => state.nodes);
 
   const selectedRobot = selectedItemType === 'ROBOT' ? robots.find(r => r.id === selectedItemId) : null;
   const selectedObstacle = selectedItemType === 'OBSTACLE' ? obstacles.find(o => o.id === selectedItemId) : null;
+
+  const p2pNode = selectedRobot ? p2pNodes[selectedRobot.id] : null;
+  const nodeId = p2pNode ? p2pNode.nodeId : `amr-node-${selectedRobot?.id.toLowerCase()}`;
+  const isOnline = p2pNode ? p2pNode.isOnline : (selectedRobot?.isOnline ?? true);
 
   return (
     <div className="w-[240px] bg-panel border-l border-border flex flex-col flex-shrink-0">
@@ -21,7 +27,8 @@ export const InspectorPanel: React.FC = () => {
             <div>
               <div className="text-[10px] text-muted font-semibold mb-1">Selected Object</div>
               <div className="font-bold text-[14px]">ROBOT</div>
-              <div className="font-mono mt-1">ID: {selectedRobot.id}</div>
+              <div className="font-mono mt-1 font-bold">ID: {selectedRobot.id}</div>
+              <div className="font-mono text-[11px] text-muted">Node ID: {nodeId}</div>
             </div>
 
             <div>
@@ -64,8 +71,37 @@ export const InspectorPanel: React.FC = () => {
                 <div className="bg-workspace p-1.5 border border-border rounded-sm">Row: {selectedRobot.row}</div>
               </div>
             </div>
+
+            <div>
+              <div className="text-[10px] text-muted font-semibold mb-1">Hardware Capabilities</div>
+              <div className="flex flex-col gap-1 text-[11px] font-mono bg-workspace p-2 border border-border rounded-sm">
+                <div>Capability: <span className="font-bold">{selectedRobot.deliveryCapability || 'Standard Transport'}</span></div>
+                <div>Payload Cap: {selectedRobot.payloadCapacity ?? 20} kg</div>
+                <div>Current Load: {selectedRobot.currentLoad ?? 0} kg</div>
+                <div>Sensing Radius: {selectedRobot.sensingRadius ?? 5} m</div>
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[10px] text-muted font-semibold mb-1">P2P Connection & Telemetry</div>
+              <div className="flex flex-col gap-1 text-[11px] font-mono bg-workspace p-2 border border-border rounded-sm">
+                <div className="flex justify-between">
+                  <span>Connection:</span>
+                  <span className="font-bold text-success">CONNECTED</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Signal:</span>
+                  <span>{selectedRobot.signalStrength ?? 95}%</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Temp:</span>
+                  <span>{selectedRobot.temperature ?? 36}°C</span>
+                </div>
+              </div>
+            </div>
           </div>
         )}
+
 
         {selectedObstacle && (
           <div className="flex flex-col gap-4 text-[12px] text-text">

@@ -10,6 +10,7 @@ import { InspectorPanel } from '../components/inspector/InspectorPanel';
 import { SimulationControls } from '../components/simulation/SimulationControls';
 import { RobotCommunicationPanel } from '../components/communication/RobotCommunicationPanel';
 import { TaskManagementPanel } from '../components/task/TaskManagementPanel';
+import { RobotFleetSection } from '../components/robot/RobotFleetSection';
 import { useTaskStore } from '../store/taskStore';
 
 export default function SimulatorPage() {
@@ -27,10 +28,22 @@ export default function SimulatorPage() {
         <InspectorPanel />
 
         {activeView === 'TASKS' && (
+
+
           <div className="absolute inset-0 z-30 bg-workspace flex flex-col overflow-hidden">
             <TaskManagementPanel />
           </div>
         )}
+
+        {activeView === 'ROBOTS' && (
+          <div className="absolute inset-0 z-30 bg-workspace flex overflow-hidden">
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <RobotFleetSection />
+            </div>
+            <InspectorPanel />
+          </div>
+        )}
+
       </div>
       
       {activeView === 'WAREHOUSE' && <ComponentPalette />}
@@ -38,4 +51,5 @@ export default function SimulatorPage() {
     </div>
   );
 }
+
 
