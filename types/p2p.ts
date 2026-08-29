@@ -31,7 +31,12 @@ export interface PeerInfo {
   nodeId: string;         // e.g. "amr-node-01"
   status: PeerNodeStatus;
   lastSeen: number;       // Timestamp (ms) when last message/heartbeat was received
+  lastKnownPosition?: { col: number; row: number };
+  lastKnownState?: string;
+  lastKnownBattery?: number;
+  lastKnownTask?: string | null;
 }
+
 
 export interface AmrAgentNodeStats {
   messagesSent: number;

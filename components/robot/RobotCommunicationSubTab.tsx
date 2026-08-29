@@ -83,8 +83,30 @@ export const RobotCommunicationSubTab: React.FC = () => {
                 <div>Cap: <span className="text-text font-semibold">{robot.payloadCapacity ?? 20}kg</span></div>
               </div>
 
+              {/* Local Peer Knowledge Table (Independent Peer Position Knowledge) */}
+              {p2pNode && Object.keys(p2pNode.peerList).length > 0 && (
+                <div className="px-3 py-1.5 bg-slate-900 border-b border-slate-800 text-[9.5px] font-mono text-slate-300">
+                  <div className="text-[8.5px] font-bold text-slate-400 uppercase tracking-wider mb-1">Local Peer Knowledge Table:</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {Object.values(p2pNode.peerList).map((peer) => (
+                      <span key={peer.robotId} className="px-1.5 py-0.5 rounded bg-slate-800/90 border border-slate-700/80">
+                        <span className="font-bold text-cyan-300">{peer.robotId}</span>:{' '}
+                        {peer.status === 'ONLINE' ? (
+                          <span className="text-emerald-300">
+                            {peer.lastKnownPosition ? `(${peer.lastKnownPosition.col},${peer.lastKnownPosition.row})` : 'ONLINE'}
+                          </span>
+                        ) : (
+                          <span className="text-rose-400 font-bold">OFFLINE</span>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Individual AMR Communication Area */}
-              <div className="p-2 bg-[#1E293B] flex-1 flex flex-col min-h-[180px] max-h-[220px]">
+              <div className="p-2 bg-[#1E293B] flex-1 flex flex-col min-h-[160px] max-h-[200px]">
+
                 <div className="text-[9px] font-bold tracking-wider text-slate-400 uppercase mb-1 flex justify-between items-center">
                   <span>{robot.id} P2P Direct Log</span>
                   <span className="text-emerald-400 font-mono text-[9px]">{history.length} msgs</span>

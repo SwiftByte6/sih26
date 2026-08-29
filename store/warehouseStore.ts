@@ -9,6 +9,9 @@ export type Task = { id: string, targetRow: number, targetCol: number, assignedT
 
 const MAX_MESSAGES = 200;
 let msgCounter = 0;
+let lastStatusBroadcastTime = 0;
+const STATUS_BROADCAST_INTERVAL_MS = 1000;
+
 
 function createMsg(sender: string, receiver: string, message: string, category: CommunicationMessage['category'], priority: CommunicationMessage['priority'] = 'NORMAL'): CommunicationMessage {
   msgCounter++;
@@ -182,15 +185,39 @@ export const useWarehouseStore = create<WarehouseState>((set) => ({
   clearCommunications: () => set({ communications: [], activeCommLinks: [] }),
 
   tick: () => set((state) => {
+
     if (!state.isRunning) return state;
 
+    const now = Date.now();
+    const p2pStore = useP2PStore.getState();
+
     // Process P2P Heartbeats & Peer Discovery in Simulated Network
-    useP2PStore.getState().processHeartbeats();
+    p2pStore.processHeartbeats();
+
+    // Controlled P2P STATUS_UPDATE broadcast (every 1000 ms)
+    if (now - lastStatusBroadcastTime >= STATUS_BROADCAST_INTERVAL_MS) {
+      lastStatusBroadcastTime = now;
+      state.robots.forEach((robot) => {
+        const isOnline = robot.isOnline ?? true;
+        if (isOnline) {
+          const taskLabel = robot.currentTask || robot.currentTaskId || null;
+          p2pStore.broadcastMessage(robot.id, 'STATUS_UPDATE', {
+            robotId: robot.id,
+            position: { col: robot.col, row: robot.row },
+            status: robot.state,
+            battery: Math.round(robot.battery),
+            task: taskLabel,
+            speed: robot.speed,
+            body: `Pos (${robot.col},${robot.row}) | ${robot.state} | Battery: ${Math.round(robot.battery)}%${taskLabel ? ` | Task: ${taskLabel}` : ''}`,
+          });
+        }
+      });
+    }
 
     const taskStore = useTaskStore.getState();
-    const now = Date.now();
     const newMessages: CommunicationMessage[] = [];
     const newLinks: ActiveCommLink[] = [];
+
     
     // Expire old visual links
     const activeLinks = state.activeCommLinks.filter(l => l.expires > now);

@@ -49,15 +49,46 @@ export const useP2PStore = create<P2PState>((set, get) => ({
 
   sendDirectMessage: (senderId, receiverId, type, payload) => {
     const success = networkInstance.sendDirectMessage(senderId, receiverId, type, payload);
+    if (success && type !== 'HEARTBEAT') {
+      const bodyText = typeof payload === 'string' ? payload : payload?.body || payload?.status || type;
+      try {
+        const warehouseStore = require('./warehouseStore').useWarehouseStore;
+        warehouseStore.getState().addCommunication({
+          id: `COMM-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          timestamp: Date.now(),
+          sender: senderId,
+          receiver: receiverId,
+          category: type === 'STATUS_UPDATE' ? 'SYSTEM' : 'COORDINATION',
+          priority: 'NORMAL',
+          message: `[${type}] ${bodyText}`,
+        });
+      } catch (e) {}
+    }
     get().processHeartbeats(); // sync store nodes snapshot
     return success;
   },
 
   broadcastMessage: (senderId, type, payload) => {
     const success = networkInstance.broadcastMessage(senderId, type, payload);
+    if (success && type !== 'HEARTBEAT') {
+      const bodyText = typeof payload === 'string' ? payload : payload?.body || payload?.status || type;
+      try {
+        const warehouseStore = require('./warehouseStore').useWarehouseStore;
+        warehouseStore.getState().addCommunication({
+          id: `COMM-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          timestamp: Date.now(),
+          sender: senderId,
+          receiver: 'ALL',
+          category: type === 'STATUS_UPDATE' ? 'SYSTEM' : 'COORDINATION',
+          priority: 'NORMAL',
+          message: `[${type}] ${bodyText}`,
+        });
+      } catch (e) {}
+    }
     get().processHeartbeats(); // sync store nodes snapshot
     return success;
   },
+
 
   setRobotOnlineStatus: (robotId, isOnline) => {
     networkInstance.setNodeOnlineStatus(robotId, isOnline);

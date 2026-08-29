@@ -88,12 +88,17 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
           if (message.type === 'HEARTBEAT') {
             targetNode.stats.heartbeatsReceived++;
           }
-          // Peer discovery: update lastSeen & status for sender
+          // Peer discovery & peer state knowledge update
+          const prevPeer = targetNode.peerList[sender.robotId];
           targetNode.peerList[sender.robotId] = {
             robotId: sender.robotId,
             nodeId: sender.nodeId,
             status: 'ONLINE',
             lastSeen: message.timestamp,
+            lastKnownPosition: message.payload?.position || prevPeer?.lastKnownPosition,
+            lastKnownState: message.payload?.status || prevPeer?.lastKnownState,
+            lastKnownBattery: message.payload?.battery || prevPeer?.lastKnownBattery,
+            lastKnownTask: message.payload?.task !== undefined ? message.payload?.task : prevPeer?.lastKnownTask,
           };
           deliveredCount++;
         }
@@ -109,17 +114,23 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
         if (message.type === 'HEARTBEAT') {
           targetNode.stats.heartbeatsReceived++;
         }
-        // Peer discovery: update lastSeen & status for sender
+        // Peer discovery & peer state knowledge update
+        const prevPeer = targetNode.peerList[sender.robotId];
         targetNode.peerList[sender.robotId] = {
           robotId: sender.robotId,
           nodeId: sender.nodeId,
           status: 'ONLINE',
           lastSeen: message.timestamp,
+          lastKnownPosition: message.payload?.position || prevPeer?.lastKnownPosition,
+          lastKnownState: message.payload?.status || prevPeer?.lastKnownState,
+          lastKnownBattery: message.payload?.battery || prevPeer?.lastKnownBattery,
+          lastKnownTask: message.payload?.task !== undefined ? message.payload?.task : prevPeer?.lastKnownTask,
         };
         return true;
       }
       return false; // Target node offline or not found
     }
+
   }
 
   sendDirectMessage(senderId: string, receiverId: string, type: P2PMessageType, payload?: any): boolean {
