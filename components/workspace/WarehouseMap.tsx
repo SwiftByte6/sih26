@@ -4,13 +4,41 @@ import React from 'react';
 import { Stage, Layer, Rect, Circle, Line, Text, Group } from 'react-konva';
 import { useWarehouseStore } from '../../store/warehouseStore';
 import { Obstacle } from './Obstacle';
+import { AmrRobot } from './AmrRobot';
 
 export const WarehouseMap: React.FC = () => {
-  const { shelves, paths, pois, robots, obstacles, intersections, selectedItemId, setSelectedItem, scale, pan } = useWarehouseStore();
+  const { shelves, paths, pois, robots, obstacles, intersections, selectedItemId, setSelectedItem, scale, pan, showGrid, gridRows, gridCols, cellSize, activeCommLinks } = useWarehouseStore();
 
   const handleSelect = (id: string, type: any) => {
     setSelectedItem(id, type);
   };
+
+  // Pre-calculate grid lines
+  const gridLines = [];
+  if (showGrid) {
+    // Vertical lines
+    for (let i = 0; i <= gridCols; i++) {
+      gridLines.push(
+        <Line
+          key={`v-${i}`}
+          points={[i * cellSize, 0, i * cellSize, gridRows * cellSize]}
+          stroke="#AEB0AD"
+          strokeWidth={1}
+        />
+      );
+    }
+    // Horizontal lines
+    for (let i = 0; i <= gridRows; i++) {
+      gridLines.push(
+        <Line
+          key={`h-${i}`}
+          points={[0, i * cellSize, gridCols * cellSize, i * cellSize]}
+          stroke="#AEB0AD"
+          strokeWidth={1}
+        />
+      );
+    }
+  }
 
   return (
     <Stage 
@@ -28,6 +56,19 @@ export const WarehouseMap: React.FC = () => {
       }}
     >
       <Layer>
+        {/* Grid Background */}
+        {showGrid && (
+          <Rect
+            x={0}
+            y={0}
+            width={gridCols * cellSize}
+            height={gridRows * cellSize}
+            fill="#CCCDCA"
+          />
+        )}
+        
+        {/* Grid Lines */}
+        {showGrid && gridLines}
         {/* Paths */}
         {paths.map(path => {
           const start = intersections.find(i => i.id === path.startId);
@@ -36,7 +77,7 @@ export const WarehouseMap: React.FC = () => {
           return (
             <Line
               key={path.id}
-              points={[start.x, start.y, end.x, end.y]}
+              points={[start.col * cellSize, start.row * cellSize, end.col * cellSize, end.row * cellSize]}
               stroke="#2878C8"
               strokeWidth={2}
               dash={[5, 5]}
@@ -49,8 +90,8 @@ export const WarehouseMap: React.FC = () => {
         {intersections.map(intersection => (
           <Circle
             key={intersection.id}
-            x={intersection.x}
-            y={intersection.y}
+            x={intersection.col * cellSize}
+            y={intersection.row * cellSize}
             radius={4}
             fill="#9AA7B2"
           />
@@ -58,18 +99,18 @@ export const WarehouseMap: React.FC = () => {
 
         {/* Shelves */}
         {shelves.map(shelf => (
-          <Group key={shelf.id} x={shelf.x} y={shelf.y}>
+          <Group key={shelf.id} x={shelf.col * cellSize} y={shelf.row * cellSize}>
             <Rect
-              width={shelf.width}
-              height={shelf.height}
+              width={shelf.width * cellSize}
+              height={shelf.height * cellSize}
               fill="#D9E1E8"
               stroke="#9AA7B2"
               strokeWidth={1}
             />
             <Text
               text="SHELF"
-              width={shelf.width}
-              height={shelf.height}
+              width={shelf.width * cellSize}
+              height={shelf.height * cellSize}
               align="center"
               verticalAlign="middle"
               fill="#52606D"
@@ -86,7 +127,7 @@ export const WarehouseMap: React.FC = () => {
 
         {/* POIs */}
         {pois.map(poi => (
-          <Group key={poi.id} x={poi.x} y={poi.y}>
+          <Group key={poi.id} x={poi.col * cellSize} y={poi.row * cellSize}>
             <Circle radius={12} fill={poi.type === 'PICKUP' ? '#008CC9' : poi.type === 'DROP' ? '#2E8B57' : '#D99A00'} />
             <Text
               text={poi.type === 'PICKUP' ? 'P' : poi.type === 'DROP' ? 'D' : '⚡'}
@@ -112,68 +153,29 @@ export const WarehouseMap: React.FC = () => {
         ))}
 
         {/* Robots */}
-        {robots.map(robot => {
-          const isSelected = selectedItemId === robot.id;
+        {robots.map(robot => (
+          <AmrRobot key={robot.id} robot={robot} />
+        ))}
+
+        {/* Communication Links - temporary visual lines between communicating robots */}
+        {activeCommLinks.filter(l => l.to !== 'ALL' && l.to !== 'SYSTEM').map(link => {
+          const fromRobot = robots.find(r => r.id === link.from);
+          const toRobot = robots.find(r => r.id === link.to);
+          if (!fromRobot || !toRobot) return null;
           return (
-            <Group 
-              key={robot.id} 
-              x={robot.x} 
-              y={robot.y}
-              onClick={() => handleSelect(robot.id, 'ROBOT')}
-              onTap={() => handleSelect(robot.id, 'ROBOT')}
-            >
-              {/* Path projection */}
-              {robot.path.length > 0 && (
-                <Line
-                  points={[0, 0, ...robot.path.flatMap(p => [p.x - robot.x, p.y - robot.y])]}
-                  stroke="#008CC9"
-                  strokeWidth={2}
-                  opacity={0.6}
-                />
-              )}
-              <Rect
-                x={-15}
-                y={-15}
-                width={30}
-                height={30}
-                fill={isSelected ? '#008CC9' : '#17212B'}
-                cornerRadius={4}
-                shadowColor="black"
-                shadowBlur={isSelected ? 4 : 2}
-                shadowOpacity={0.2}
-              />
-              <Circle x={0} y={-15} radius={4} fill={isSelected ? '#008CC9' : '#17212B'} />
-              <Text
-                text={robot.id}
-                x={-15}
-                y={-5}
-                width={30}
-                align="center"
-                fill="white"
-                fontSize={10}
-                fontStyle="bold"
-              />
-              <Text
-                text={robot.label}
-                x={-30}
-                y={18}
-                width={60}
-                align="center"
-                fill="#17212B"
-                fontSize={9}
-                fontStyle="bold"
-              />
-              <Text
-                text={robot.state}
-                x={-30}
-                y={28}
-                width={60}
-                align="center"
-                fill={robot.state === 'MOVING' ? '#008CC9' : robot.state === 'WAITING' ? '#D99A00' : '#2E8B57'}
-                fontSize={8}
-                fontStyle="bold"
-              />
-            </Group>
+            <Line
+              key={`${link.from}-${link.to}-${link.expires}`}
+              points={[
+                fromRobot.col * cellSize,
+                fromRobot.row * cellSize,
+                toRobot.col * cellSize,
+                toRobot.row * cellSize
+              ]}
+              stroke="#008CC9"
+              strokeWidth={1.5}
+              opacity={0.5}
+              dash={[6, 4]}
+            />
           );
         })}
       </Layer>

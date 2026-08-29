@@ -8,6 +8,7 @@ import { WarehouseWorkspace } from '../components/workspace/WarehouseWorkspace';
 import { ComponentPalette } from '../components/palette/ComponentPalette';
 import { InspectorPanel } from '../components/inspector/InspectorPanel';
 import { SimulationControls } from '../components/simulation/SimulationControls';
+import { RobotCommunicationPanel } from '../components/communication/RobotCommunicationPanel';
 
 export default function SimulatorPage() {
   return (
@@ -18,6 +19,7 @@ export default function SimulatorPage() {
       
       <div className="flex-1 flex overflow-hidden">
         <WarehouseWorkspace />
+        <RobotCommunicationPanel />
         <InspectorPanel />
       </div>
       

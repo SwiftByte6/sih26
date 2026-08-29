@@ -31,6 +31,22 @@ export const WarehouseWorkspace: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedItemId, selectedItemType, removeObstacle]);
 
+  // Simulation Loop
+  const isRunning = useWarehouseStore(state => state.isRunning);
+  const tick = useWarehouseStore(state => state.tick);
+
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout;
+    if (isRunning) {
+      intervalId = setInterval(() => {
+        tick();
+      }, 500); // 500ms per cell step for now
+    }
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [isRunning, tick]);
+
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
@@ -76,15 +92,17 @@ export const WarehouseWorkspace: React.FC = () => {
       worldX -= 20;
       worldY -= 20;
       
-      // Snap to 20px grid
-      const snapX = Math.round(worldX / 20) * 20;
-      const snapY = Math.round(worldY / 20) * 20;
+      const { cellSize } = useWarehouseStore.getState();
+      
+      // Calculate row and col
+      const col = Math.round(worldX / cellSize);
+      const row = Math.round(worldY / cellSize);
 
       addObstacle({
-        x: snapX,
-        y: snapY,
-        width: 40,
-        height: 40
+        col,
+        row,
+        width: 2,
+        height: 2
       });
     }
   };
