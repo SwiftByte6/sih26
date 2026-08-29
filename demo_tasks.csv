@@ -1,0 +1,8 @@
+Task Type,Priority,Source,Target,Weight
+Deliver Item,URGENT,POI1 (PICKUP A),POI2 (DROP B),10
+Restock Shelf,LOW,Storage-01,Shelf S2,15
+Take to Packing,NORMAL,Shelf S5,Packing Area B,5
+Store Item,NORMAL,P3,Storage-02,8
+Deliver Item,URGENT,P1,POI2 (DROP B),12
+Restock Shelf,URGENT,Storage-02,Shelf S6,20
+Take to Packing,LOW,Shelf S2,Packing Area B,3

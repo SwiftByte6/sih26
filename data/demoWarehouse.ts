@@ -34,9 +34,14 @@ export const demoWarehouse = {
   ] as Obstacle[],
 
   pois: [
-    { id: 'POI1', type: 'PICKUP', col: 8, row: 25, label: 'PICKUP A' },
-    { id: 'POI2', type: 'DROP', col: 24, row: 25, label: 'DROP B' },
+    { id: 'POI1', type: 'PICKUP', col: 8, row: 25, label: 'POI1 (PICKUP A)' },
+    { id: 'POI2', type: 'DROP', col: 24, row: 25, label: 'POI2 (DROP B)' },
     { id: 'POI3', type: 'CHARGER', col: 3, row: 11, label: 'CHARGER 1' },
+    { id: 'POI4', type: 'PICKUP', col: 5, row: 4, label: 'Storage-01' },
+    { id: 'POI5', type: 'PICKUP', col: 13, row: 4, label: 'Storage-02' },
+    { id: 'POI6', type: 'DROP', col: 5, row: 14, label: 'Packing Area B' },
+    { id: 'POI7', type: 'PICKUP', col: 13, row: 14, label: 'P3' },
+    { id: 'POI8', type: 'PICKUP', col: 21, row: 14, label: 'P1' },
   ] as PointOfInterest[],
 
   robots: [
@@ -49,6 +54,10 @@ export const demoWarehouse = {
       battery: 78,
       speed: 1.4,
       currentTask: 'PICK-4',
+      currentTaskId: null,
+      taskPhase: null,
+      pickupPoint: null,
+      dropPoint: null,
       path: [{ col: 10, row: 11 }, { col: 16, row: 11 }]
     },
     {
@@ -60,6 +69,10 @@ export const demoWarehouse = {
       battery: 45,
       speed: 0,
       currentTask: null,
+      currentTaskId: null,
+      taskPhase: null,
+      pickupPoint: null,
+      dropPoint: null,
       path: []
     },
     {
@@ -71,6 +84,10 @@ export const demoWarehouse = {
       battery: 99,
       speed: 0,
       currentTask: null,
+      currentTaskId: null,
+      taskPhase: null,
+      pickupPoint: null,
+      dropPoint: null,
       path: []
     }
   ] as Robot[]

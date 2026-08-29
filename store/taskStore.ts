@@ -1,0 +1,579 @@
+import { create } from 'zustand';
+import {
+  Task,
+  TaskPriority,
+  TaskStatus,
+  TaskType,
+  TaskEvent,
+  TaskEventType,
+  TaskEventListener,
+  TaskUploadRow,
+} from '../types/task';
+
+// Initial demo tasks with T-001 format
+const INITIAL_DEMO_TASKS: Task[] = [];
+
+// Calculate next sequential Task ID in T-001 format
+export const generateNextTaskId = (tasks: Task[]): string => {
+  let maxId = 0;
+  tasks.forEach((t) => {
+    const match = t.task_id.match(/(?:T|TASK)-(\d+)/i);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (num > maxId) maxId = num;
+    }
+  });
+  return `T-${(maxId + 1).toString().padStart(3, '0')}`;
+};
+
+// Priority Rank: URGENT (300) -> LOW (200) -> NORMAL (100)
+const getPriorityRank = (priority: TaskPriority): number => {
+  switch (priority) {
+    case 'URGENT':
+      return 300;
+    case 'LOW':
+      return 200;
+    case 'NORMAL':
+    default:
+      return 100;
+  }
+};
+
+// Sort pending / unassigned tasks for execution consideration order (URGENT -> LOW -> NORMAL)
+// Preserves FIFO creation order for same priority
+export const sortPendingTasksByPriority = (pendingTasks: Task[]): Task[] => {
+  return [...pendingTasks].sort((a, b) => {
+    const rankA = getPriorityRank(a.priority);
+    const rankB = getPriorityRank(b.priority);
+    if (rankB !== rankA) {
+      return rankB - rankA; // Higher rank first (URGENT -> LOW -> NORMAL)
+    }
+    return new Date(a.created_time).getTime() - new Date(b.created_time).getTime();
+  });
+};
+
+export interface ImportedRowValidation {
+  valid: boolean;
+  error?: string;
+  task?: Omit<Task, 'task_id' | 'created_time' | 'assigned_time' | 'started_time' | 'completed_time' | 'failed_time' | 'reassigned_count' | 'failure_reason' | 'status' | 'assigned_robot_id'>;
+}
+
+// Helper to extract field value by normalized header name regardless of column order, case, or format
+const getFieldValue = (item: any, possibleKeys: string[]): string | undefined => {
+  if (!item || typeof item !== 'object') return undefined;
+
+  // 1. Direct key check
+  for (const k of possibleKeys) {
+    if (item[k] !== undefined && item[k] !== null && String(item[k]).trim() !== '') {
+      return String(item[k]).trim();
+    }
+  }
+
+  // 2. Case-insensitive & space-insensitive header matching
+  const itemKeys = Object.keys(item);
+  for (const key of itemKeys) {
+    const normKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+    for (const targetKey of possibleKeys) {
+      const normTarget = targetKey.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (normKey === normTarget) {
+        const val = item[key];
+        if (val !== undefined && val !== null && String(val).trim() !== '') {
+          return String(val).trim();
+        }
+      }
+    }
+  }
+  return undefined;
+};
+
+// Canonical Validation for imported Task Rows
+export const validateImportedRow = (item: any, rowNum: number): ImportedRowValidation => {
+  const rawType = getFieldValue(item, ['Task Type', 'task_type', 'taskType', 'type']) || '';
+  if (!rawType) {
+    return { valid: false, error: `Row ${rowNum}: Missing required column "Task Type".` };
+  }
+
+  // Canonical Task Type Normalization
+  let taskType: TaskType | null = null;
+  const normType = rawType.toUpperCase().replace(/[_\-\s]+/g, ' ');
+  if (normType === 'DELIVER ITEM' || normType === 'DELIVER_ITEM' || normType === 'DELIVER') taskType = 'DELIVER_ITEM';
+  else if (normType === 'RESTOCK SHELF' || normType === 'RESTOCK_SHELF' || normType === 'RESTOCK') taskType = 'RESTOCK_SHELF';
+  else if (normType === 'TAKE TO PACKING' || normType === 'TAKE_TO_PACKING' || normType === 'PACKING') taskType = 'TAKE_TO_PACKING';
+  else if (normType === 'STORE ITEM' || normType === 'STORE_ITEM' || normType === 'STORE') taskType = 'STORE_ITEM';
+  else if (normType === 'MOVE CONTAINER' || normType === 'MOVE_CONTAINER' || normType === 'CONTAINER') taskType = 'MOVE_CONTAINER';
+
+  if (!taskType) {
+    return {
+      valid: false,
+      error: `Row ${rowNum}: Invalid Task Type "${rawType}". Allowed values: Deliver Item, Restock Shelf, Take to Packing, Store Item, Move Container.`,
+    };
+  }
+
+  // Canonical Priority Normalization
+  const rawPriorityStr = getFieldValue(item, ['Priority', 'priority']) || 'NORMAL';
+  const rawPriority = rawPriorityStr.toUpperCase();
+  let priority: TaskPriority | null = null;
+  if (rawPriority === 'URGENT') priority = 'URGENT';
+  else if (rawPriority === 'LOW') priority = 'LOW';
+  else if (rawPriority === 'NORMAL') priority = 'NORMAL';
+
+  if (!priority) {
+    return {
+      valid: false,
+      error: `Row ${rowNum}: Invalid Priority "${rawPriorityStr}". Allowed values: NORMAL, LOW, URGENT.`,
+    };
+  }
+
+  const pickup = getFieldValue(item, ['Source', 'source', 'pickup_point', 'pickupPoint', 'pickup', 'p1']) || '';
+  const drop = getFieldValue(item, ['Target', 'target', 'destination', 'drop_point', 'dropPoint', 'drop', 'd1']) || '';
+
+  if (!pickup) {
+    return { valid: false, error: `Row ${rowNum}: Missing required column "Source".` };
+  }
+
+  if (!drop) {
+    return { valid: false, error: `Row ${rowNum}: Missing required column "Target".` };
+  }
+
+  // Charger Prohibition Check
+  if (pickup.toUpperCase().includes('CHARGER') || drop.toUpperCase().includes('CHARGER')) {
+    return { valid: false, error: `Row ${rowNum}: Charger locations (e.g. CHARGER 1) are not allowed for task creation.` };
+  }
+
+  // Location Rules Validation by Task Type
+  const isPickupLoc = (loc: string) => /pickup|p1|p3|poi1/i.test(loc);
+  const isDropLoc = (loc: string) => /drop|d5|d8|poi2/i.test(loc);
+  const isStorageLoc = (loc: string) => /storage/i.test(loc);
+  const isShelfLoc = (loc: string) => /shelf|^s[1-6]$/i.test(loc);
+  const isPackingLoc = (loc: string) => /packing/i.test(loc);
+  const isContainerLoc = (loc: string) => /bin|container/i.test(loc);
+
+  switch (taskType) {
+    case 'DELIVER_ITEM':
+      if (!isPickupLoc(pickup)) {
+        return { valid: false, error: `Row ${rowNum}: Invalid source "${pickup}" for Deliver Item. Source must be a Pickup location (e.g. PICKUP A, P1).` };
+      }
+      if (!isDropLoc(drop)) {
+        return { valid: false, error: `Row ${rowNum}: Invalid target "${drop}" for Deliver Item. Target must be a Drop location (e.g. DROP B, D5).` };
+      }
+      break;
+
+    case 'RESTOCK_SHELF':
+      if (!isStorageLoc(pickup)) {
+        return { valid: false, error: `Row ${rowNum}: Invalid source "${pickup}" for Restock Shelf. Source must be a Storage location (e.g. Storage-01).` };
+      }
+      if (!isShelfLoc(drop)) {
+        return { valid: false, error: `Row ${rowNum}: Invalid target "${drop}" for Restock Shelf. Target must be a Shelf (e.g. S1-S6, Shelf S5).` };
+      }
+      break;
+
+    case 'TAKE_TO_PACKING':
+      if (!isShelfLoc(pickup)) {
+        return { valid: false, error: `Row ${rowNum}: Invalid source "${pickup}" for Take to Packing. Source must be a Shelf (e.g. S1-S6, Shelf S5).` };
+      }
+      if (!isPackingLoc(drop)) {
+        return { valid: false, error: `Row ${rowNum}: Invalid target "${drop}" for Take to Packing. Target must be a Packing area (e.g. Packing Area B).` };
+      }
+      break;
+
+    case 'STORE_ITEM':
+      if (!isPickupLoc(pickup)) {
+        return { valid: false, error: `Row ${rowNum}: Invalid source "${pickup}" for Store Item. Source must be a Pickup location (e.g. PICKUP A, P3).` };
+      }
+      if (!isStorageLoc(drop)) {
+        return { valid: false, error: `Row ${rowNum}: Invalid target "${drop}" for Store Item. Target must be a Storage location (e.g. Storage-01).` };
+      }
+      break;
+
+    case 'MOVE_CONTAINER':
+      if (!isContainerLoc(pickup)) {
+        return { valid: false, error: `Row ${rowNum}: Invalid source "${pickup}" for Move Container. Source must be a Container/Bin (e.g. Bin-A).` };
+      }
+      if (!isContainerLoc(drop)) {
+        return { valid: false, error: `Row ${rowNum}: Invalid target "${drop}" for Move Container. Target must be a Container/Bin (e.g. Bin-B).` };
+      }
+      break;
+  }
+
+  const rawWeight = getFieldValue(item, ['Weight', 'weight']);
+  const weight = rawWeight !== undefined && !isNaN(Number(rawWeight)) && Number(rawWeight) >= 0 ? Number(rawWeight) : 10;
+
+  return {
+    valid: true,
+    task: {
+      task_type: taskType,
+      pickup_point: pickup,
+      drop_point: drop,
+      priority,
+      weight,
+    },
+  };
+};
+
+const eventListeners: Set<TaskEventListener> = new Set();
+
+const notifyListeners = (type: TaskEventType, task: Task, metadata?: Record<string, unknown>) => {
+  const event: TaskEvent = {
+    type,
+    task,
+    timestamp: new Date().toISOString(),
+    metadata,
+  };
+  eventListeners.forEach((listener) => {
+    try {
+      listener(event);
+    } catch (e) {
+      console.error('Task listener error:', e);
+    }
+  });
+};
+
+interface TaskState {
+  tasks: Task[];
+  activeView: 'WAREHOUSE' | 'TASKS';
+
+  setActiveView: (view: 'WAREHOUSE' | 'TASKS') => void;
+
+  // Task Creation
+  createTask: (taskData: Omit<Task, 'task_id' | 'created_time' | 'assigned_time' | 'started_time' | 'completed_time' | 'failed_time' | 'reassigned_count' | 'failure_reason' | 'status' | 'assigned_robot_id'>) => { success: boolean; taskId: string; error?: string };
+  addMultipleTasks: (tasksData: (TaskUploadRow | Partial<Task>)[]) => { success: boolean; addedCount: number; errors: string[] };
+  updateTask: (taskId: string, updates: Partial<Task>) => void;
+  deleteTask: (taskId: string) => void;
+  updatePriority: (taskId: string, priority: TaskPriority) => void;
+
+  // Queries
+  getTask: (taskId: string) => Task | undefined;
+  getAllTasks: () => Task[];
+  getPendingTasks: () => Task[]; // Returns pending tasks in priority execution consideration order
+  getAssignedTasks: () => Task[];
+  getActiveTasks: () => Task[];
+  getCompletedTasks: () => Task[];
+
+  // Assignment Result Reception (From AMR Assignment Module)
+  receiveAssignmentResult: (taskId: string, robotId: string | null) => void;
+
+  // Task Execution Tracking State Machine
+  startTask: (taskId: string) => void;
+  completeTask: (taskId: string) => void;
+  failTask: (taskId: string, reason?: string) => void;
+  reassignTask: (taskId: string, reason?: string) => void;
+  handleRobotFailure: (robotId: string, reason?: string) => void;
+
+  // Persistence
+  saveTasks: () => string;
+  loadTasks: (jsonContent: string) => boolean;
+
+  // Event subscription
+  subscribeToTaskEvents: (listener: TaskEventListener) => () => void;
+}
+
+export const useTaskStore = create<TaskState>((set, get) => ({
+  tasks: INITIAL_DEMO_TASKS,
+  activeView: 'WAREHOUSE',
+
+  setActiveView: (view) => set({ activeView: view }),
+
+  createTask: (taskData) => {
+    const generatedId = generateNextTaskId(get().tasks);
+
+    const newTask: Task = {
+      ...taskData,
+      task_id: generatedId,
+      status: 'PENDING',
+      assigned_robot_id: null,
+      created_time: new Date().toISOString(),
+      assigned_time: null,
+      started_time: null,
+      completed_time: null,
+      failed_time: null,
+      reassigned_count: 0,
+      failure_reason: null,
+    };
+
+    // Main Master Task List preserves Task ID / creation order
+    set((state) => ({
+      tasks: [...state.tasks, newTask],
+    }));
+
+    notifyListeners('TASK_CREATED', newTask);
+    return { success: true, taskId: generatedId };
+  },
+
+  addMultipleTasks: (tasksData) => {
+    const errors: string[] = [];
+    let addedCount = 0;
+    const currentTasks = [...get().tasks];
+
+    const newTasksToPush: Task[] = [];
+
+    tasksData.forEach((item, idx) => {
+      const rowNum = idx + 1;
+      const validation = validateImportedRow(item, rowNum);
+
+      if (!validation.valid || !validation.task) {
+        errors.push(validation.error || `Row ${rowNum}: Invalid task data.`);
+        return;
+      }
+
+      // Auto-generate Task ID sequentially continuing from current max
+      const nextId = generateNextTaskId([...currentTasks, ...newTasksToPush]);
+
+      const validTask: Task = {
+        task_id: nextId,
+        ...validation.task,
+        status: 'PENDING',
+        assigned_robot_id: null,
+        created_time: new Date().toISOString(),
+        assigned_time: null,
+        started_time: null,
+        completed_time: null,
+        failed_time: null,
+        reassigned_count: 0,
+        failure_reason: null,
+      };
+
+      newTasksToPush.push(validTask);
+      addedCount++;
+    });
+
+    if (newTasksToPush.length > 0) {
+      set(() => ({
+        tasks: [...currentTasks, ...newTasksToPush],
+      }));
+      newTasksToPush.forEach((t) => notifyListeners('TASK_CREATED', t));
+    }
+
+    return { success: addedCount > 0, addedCount, errors };
+  },
+
+  updateTask: (taskId, updates) => {
+    set((state) => ({
+      tasks: state.tasks.map((t) => (t.task_id === taskId ? { ...t, ...updates } : t)),
+    }));
+    const task = get().getTask(taskId);
+    if (task) notifyListeners('TASK_UPDATED', task);
+  },
+
+  deleteTask: (taskId) => {
+    const task = get().getTask(taskId);
+    set((state) => ({
+      tasks: state.tasks.filter((t) => t.task_id !== taskId),
+    }));
+    if (task) notifyListeners('TASK_UPDATED', { ...task, status: 'FAILED', failure_reason: 'Deleted' });
+  },
+
+  updatePriority: (taskId, priority) => {
+    set((state) => ({
+      tasks: state.tasks.map((t) => (t.task_id === taskId ? { ...t, priority } : t)),
+    }));
+    const task = get().getTask(taskId);
+    if (task) notifyListeners('TASK_PRIORITY_CHANGED', task);
+  },
+
+  getTask: (taskId) => get().tasks.find((t) => t.task_id === taskId),
+  getAllTasks: () => get().tasks,
+  // Pending tasks query returns pending tasks sorted strictly by execution priority order (URGENT -> LOW -> NORMAL)
+  getPendingTasks: () => {
+    const pending = get().tasks.filter((t) => t.status === 'PENDING' || t.status === 'REASSIGNED');
+    return sortPendingTasksByPriority(pending);
+  },
+  getAssignedTasks: () => get().tasks.filter((t) => t.status === 'ASSIGNED'),
+  getActiveTasks: () => get().tasks.filter((t) => t.status === 'ASSIGNED' || t.status === 'IN_PROGRESS'),
+  getCompletedTasks: () => get().tasks.filter((t) => t.status === 'COMPLETED'),
+
+  // Assignment Result Reception
+  receiveAssignmentResult: (taskId, robotId) => {
+    set((state) => ({
+      tasks: state.tasks.map((t) => {
+        if (t.task_id === taskId) {
+          if (robotId) {
+            return {
+              ...t,
+              status: 'ASSIGNED' as TaskStatus,
+              assigned_robot_id: robotId,
+              assigned_time: new Date().toISOString(),
+            };
+          } else {
+            return {
+              ...t,
+              status: 'PENDING' as TaskStatus,
+              assigned_robot_id: null,
+            };
+          }
+        }
+        return t;
+      }),
+    }));
+
+    const task = get().getTask(taskId);
+    if (task) {
+      if (robotId) {
+        notifyListeners('TASK_ASSIGNED', task, { robotId });
+      } else {
+        notifyListeners('TASK_UNASSIGNED', task);
+      }
+    }
+  },
+
+  startTask: (taskId) => {
+    set((state) => ({
+      tasks: state.tasks.map((t) =>
+        t.task_id === taskId
+          ? {
+              ...t,
+              status: 'IN_PROGRESS',
+              started_time: new Date().toISOString(),
+            }
+          : t
+      ),
+    }));
+    const task = get().getTask(taskId);
+    if (task) notifyListeners('TASK_STARTED', task);
+  },
+
+  completeTask: (taskId) => {
+    set((state) => ({
+      tasks: state.tasks.map((t) =>
+        t.task_id === taskId
+          ? {
+              ...t,
+              status: 'COMPLETED',
+              completed_time: new Date().toISOString(),
+            }
+          : t
+      ),
+    }));
+    const task = get().getTask(taskId);
+    if (task) notifyListeners('TASK_COMPLETED', task);
+  },
+
+  failTask: (taskId, reason = 'Execution failed') => {
+    set((state) => ({
+      tasks: state.tasks.map((t) =>
+        t.task_id === taskId
+          ? {
+              ...t,
+              status: 'FAILED',
+              failed_time: new Date().toISOString(),
+              failure_reason: reason,
+            }
+          : t
+      ),
+    }));
+    const task = get().getTask(taskId);
+    if (task) notifyListeners('TASK_FAILED', task, { reason });
+  },
+
+  reassignTask: (taskId, reason = 'Reassignment triggered') => {
+    set((state) => ({
+      tasks: state.tasks.map((t) => {
+        if (t.task_id === taskId) {
+          return {
+            ...t,
+            status: 'PENDING' as TaskStatus,
+            assigned_robot_id: null,
+            reassigned_count: t.reassigned_count + 1,
+            failure_reason: reason,
+          };
+        }
+        return t;
+      }),
+    }));
+
+    const task = get().getTask(taskId);
+    if (task) notifyListeners('TASK_REASSIGNED', task, { reason });
+  },
+
+  handleRobotFailure: (robotId, reason = 'Robot Hardware/Connectivity Failure') => {
+    set((state) => {
+      const affectedTasks = state.tasks.filter(
+        (t) => t.assigned_robot_id === robotId && (t.status === 'ASSIGNED' || t.status === 'IN_PROGRESS')
+      );
+
+      const updatedTasks = state.tasks.map((t) => {
+        if (t.assigned_robot_id === robotId && (t.status === 'ASSIGNED' || t.status === 'IN_PROGRESS')) {
+          return {
+            ...t,
+            status: 'PENDING' as TaskStatus,
+            assigned_robot_id: null,
+            reassigned_count: t.reassigned_count + 1,
+            failed_time: new Date().toISOString(),
+            failure_reason: `${reason} (${robotId})`,
+          };
+        }
+        return t;
+      });
+
+      affectedTasks.forEach((at) => {
+        notifyListeners('TASK_FAILED', at, { robotId, reason });
+        notifyListeners('TASK_REASSIGNED', at, { robotId, reason });
+      });
+
+      return { tasks: updatedTasks };
+    });
+  },
+
+  saveTasks: () => {
+    const payload = {
+      version: '1.0',
+      exported_at: new Date().toISOString(),
+      tasks: get().tasks,
+    };
+    return JSON.stringify(payload, null, 2);
+  },
+
+  loadTasks: (jsonContent) => {
+    try {
+      const parsed = JSON.parse(jsonContent);
+      const tasksArray: Task[] = Array.isArray(parsed) ? parsed : parsed.tasks || [];
+
+      if (!Array.isArray(tasksArray) || tasksArray.length === 0) return false;
+
+      // Validate saved task items preserve exact Task ID, status, assignment, etc.
+      const validTasks: Task[] = [];
+      for (const t of tasksArray) {
+        const rawPickup = t.pickup_point || (t as any).source || (t as any).pickup || '';
+        const rawDrop = t.drop_point || (t as any).target || (t as any).destination || (t as any).drop || '';
+
+        if (!t.task_id || !rawPickup || !rawDrop) {
+          console.error('Invalid task structure in saved state file:', t);
+          return false;
+        }
+
+        validTasks.push({
+          task_id: String(t.task_id).toUpperCase(),
+          task_type: (t.task_type || (t as any).taskType || 'DELIVER_ITEM') as TaskType,
+          pickup_point: String(rawPickup),
+          drop_point: String(rawDrop),
+          priority: (t.priority || 'NORMAL') as TaskPriority,
+          weight: Number(t.weight) >= 0 ? Number(t.weight) : 10,
+          status: (t.status || 'PENDING') as TaskStatus,
+          assigned_robot_id: t.assigned_robot_id || (t as any).assignedRobotId || null,
+          created_time: t.created_time || (t as any).createdAt || new Date().toISOString(),
+          assigned_time: t.assigned_time || (t as any).assignedAt || null,
+          started_time: t.started_time || (t as any).startedAt || null,
+          completed_time: t.completed_time || (t as any).completedAt || null,
+          failed_time: t.failed_time || (t as any).failedAt || null,
+          reassigned_count: Number(t.reassigned_count) || 0,
+          failure_reason: t.failure_reason || (t as any).failureReason || null,
+        });
+      }
+
+      set(() => ({
+        tasks: validTasks,
+      }));
+
+      return true;
+    } catch (e) {
+      console.error('Failed to parse saved task state JSON:', e);
+      return false;
+    }
+  },
+
+  subscribeToTaskEvents: (listener) => {
+    eventListeners.add(listener);
+    return () => {
+      eventListeners.delete(listener);
+    };
+  },
+}));
