@@ -11,7 +11,144 @@ import {
 } from '../types/task';
 
 // Initial demo tasks with T-001 format
-const INITIAL_DEMO_TASKS: Task[] = [];
+const INITIAL_DEMO_TASKS: Task[] = [
+  {
+    task_id: 'T-001',
+    task_type: 'DELIVER_ITEM',
+    pickup_point: 'PICKUP A',
+    drop_point: 'DROP B',
+    priority: 'NORMAL',
+    weight: 10,
+    status: 'PENDING',
+    assigned_robot_id: null,
+    created_time: new Date().toISOString(),
+    assigned_time: null,
+    started_time: null,
+    completed_time: null,
+    failed_time: null,
+    reassigned_count: 0,
+    failure_reason: null,
+  },
+  {
+    task_id: 'T-002',
+    task_type: 'RESTOCK_SHELF',
+    pickup_point: 'Storage-01',
+    drop_point: 'S1',
+    priority: 'LOW',
+    weight: 15,
+    status: 'PENDING',
+    assigned_robot_id: null,
+    created_time: new Date().toISOString(),
+    assigned_time: null,
+    started_time: null,
+    completed_time: null,
+    failed_time: null,
+    reassigned_count: 0,
+    failure_reason: null,
+  },
+  {
+    task_id: 'T-003',
+    task_type: 'TAKE_TO_PACKING',
+    pickup_point: 'S5',
+    drop_point: 'Packing Area B',
+    priority: 'NORMAL',
+    weight: 12,
+    status: 'PENDING',
+    assigned_robot_id: null,
+    created_time: new Date().toISOString(),
+    assigned_time: null,
+    started_time: null,
+    completed_time: null,
+    failed_time: null,
+    reassigned_count: 0,
+    failure_reason: null,
+  },
+  {
+    task_id: 'T-004',
+    task_type: 'DELIVER_ITEM',
+    pickup_point: 'P3',
+    drop_point: 'D5',
+    priority: 'URGENT',
+    weight: 8,
+    status: 'PENDING',
+    assigned_robot_id: null,
+    created_time: new Date().toISOString(),
+    assigned_time: null,
+    started_time: null,
+    completed_time: null,
+    failed_time: null,
+    reassigned_count: 0,
+    failure_reason: null,
+  },
+  {
+    task_id: 'T-005',
+    task_type: 'STORE_ITEM',
+    pickup_point: 'P1',
+    drop_point: 'Storage-02',
+    priority: 'NORMAL',
+    weight: 18,
+    status: 'PENDING',
+    assigned_robot_id: null,
+    created_time: new Date().toISOString(),
+    assigned_time: null,
+    started_time: null,
+    completed_time: null,
+    failed_time: null,
+    reassigned_count: 0,
+    failure_reason: null,
+  },
+  {
+    task_id: 'T-006',
+    task_type: 'DELIVER_ITEM',
+    pickup_point: 'PICKUP A',
+    drop_point: 'DROP B',
+    priority: 'LOW',
+    weight: 5,
+    status: 'PENDING',
+    assigned_robot_id: null,
+    created_time: new Date().toISOString(),
+    assigned_time: null,
+    started_time: null,
+    completed_time: null,
+    failed_time: null,
+    reassigned_count: 0,
+    failure_reason: null,
+  },
+  {
+    task_id: 'T-007',
+    task_type: 'RESTOCK_SHELF',
+    pickup_point: 'Storage-01',
+    drop_point: 'S2',
+    priority: 'NORMAL',
+    weight: 14,
+    status: 'PENDING',
+    assigned_robot_id: null,
+    created_time: new Date().toISOString(),
+    assigned_time: null,
+    started_time: null,
+    completed_time: null,
+    failed_time: null,
+    reassigned_count: 0,
+    failure_reason: null,
+  },
+  {
+    task_id: 'T-008',
+    task_type: 'TAKE_TO_PACKING',
+    pickup_point: 'S3',
+    drop_point: 'Packing Area B',
+    priority: 'NORMAL',
+    weight: 10,
+    status: 'PENDING',
+    assigned_robot_id: null,
+    created_time: new Date().toISOString(),
+    assigned_time: null,
+    started_time: null,
+    completed_time: null,
+    failed_time: null,
+    reassigned_count: 0,
+    failure_reason: null,
+  },
+];
 
 // Calculate next sequential Task ID in T-001 format
 export const generateNextTaskId = (tasks: Task[]): string => {
@@ -238,7 +375,7 @@ interface TaskState {
   createTask: (taskData: Omit<Task, 'task_id' | 'created_time' | 'assigned_time' | 'started_time' | 'completed_time' | 'failed_time' | 'reassigned_count' | 'failure_reason' | 'status' | 'assigned_robot_id'>) => { success: boolean; taskId: string; error?: string };
   addMultipleTasks: (tasksData: (TaskUploadRow | Partial<Task>)[]) => { success: boolean; addedCount: number; errors: string[] };
   updateTask: (taskId: string, updates: Partial<Task>) => void;
-  deleteTask: (taskId: string) => void;
+  deleteTask: (taskId: string) => { success: boolean; error?: string };
   updatePriority: (taskId: string, priority: TaskPriority) => void;
 
   // Queries
@@ -356,10 +493,35 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
   deleteTask: (taskId) => {
     const task = get().getTask(taskId);
+    if (!task) {
+      return { success: false, error: `Task "${taskId}" not found.` };
+    }
+
+    // Requirement 2 & 8: Delete allowed ONLY when task.status === PENDING AND assigned_robot_id === null AND started_time === null
+    if (task.status !== 'PENDING' || task.assigned_robot_id !== null || task.started_time !== null) {
+      return { success: false, error: 'Started or assigned tasks cannot be deleted.' };
+    }
+
+    // 1. Remove task from store
     set((state) => ({
       tasks: state.tasks.filter((t) => t.task_id !== taskId),
     }));
-    if (task) notifyListeners('TASK_UPDATED', { ...task, status: 'FAILED', failure_reason: 'Deleted' });
+
+    // 2. Cleanup announced state & local task knowledge in AMR P2P agents
+    try {
+      const warehouseStore = require('./warehouseStore').useWarehouseStore.getState();
+      if (warehouseStore && warehouseStore.removeAnnouncedTaskId) {
+        warehouseStore.removeAnnouncedTaskId(taskId);
+      }
+
+      const p2pStore = require('./p2pStore').useP2PStore.getState();
+      if (p2pStore && p2pStore.removeTaskFromAllNodes) {
+        p2pStore.removeTaskFromAllNodes(taskId);
+      }
+    } catch (e) {}
+
+    notifyListeners('TASK_DELETED' as any, task);
+    return { success: true };
   },
 
   updatePriority: (taskId, priority) => {

@@ -105,29 +105,191 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
         };
       }
 
-      // Handle TASK_ANNOUNCEMENT: Store local task knowledge & trigger Phase 4A evaluation
+      // Handle TASK_ANNOUNCEMENT: Store local task knowledge, trigger Phase 4A evaluation, and broadcast TASK_BID if eligible
       if (message.type === 'TASK_ANNOUNCEMENT' && message.payload?.task) {
         const task = message.payload.task;
         targetNode.knownTasks = targetNode.knownTasks || {};
-        targetNode.knownTasks[task.task_id] = {
-          task,
-          announcementTimestamp: message.timestamp,
-        };
+        if (!targetNode.knownTasks[task.task_id]) {
+          targetNode.knownTasks[task.task_id] = {
+            task,
+            announcementTimestamp: message.timestamp,
+            allocationRound: 1,
+            allocationState: 'ANNOUNCED',
+            peerBids: {},
+            peerProposals: {},
+          };
+        }
 
         try {
           const warehouseStore = require('../../store/warehouseStore').useWarehouseStore.getState();
           const robotState = warehouseStore.robots.find((r: any) => r.id === targetNode.robotId);
           if (robotState) {
             const evaluateTask = require('../evaluation/TaskEvaluator').evaluateTask;
-            targetNode.knownTasks[task.task_id].evaluation = evaluateTask(
+            const evalResult = evaluateTask(
               robotState,
               task,
               warehouseStore.pois,
               warehouseStore.shelves
             );
+            
+            const taskKnowledge = targetNode.knownTasks[task.task_id];
+            taskKnowledge.evaluation = evalResult;
+            taskKnowledge.allocationState = 'EVALUATING';
+
+            // Populate own bid entry in local peerBids table
+            taskKnowledge.peerBids[targetNode.robotId] = {
+              robotId: targetNode.robotId,
+              timestamp: message.timestamp,
+              eligible: evalResult.eligible,
+              suitabilityScore: evalResult.suitabilityScore,
+              evaluation: evalResult,
+            };
+
+            // Phase 4C: If eligible and bid not yet sent, AMR broadcasts its TASK_BID to ALL peers
+            if (evalResult.eligible && !taskKnowledge.myBidSent) {
+              taskKnowledge.myBidSent = true;
+              taskKnowledge.allocationState = 'BIDDING';
+              setTimeout(() => {
+                this.broadcastMessage(targetNode.robotId, 'TASK_BID', {
+                  taskId: task.task_id,
+                  robotId: targetNode.robotId,
+                  eligible: true,
+                  suitabilityScore: evalResult.suitabilityScore,
+                  distanceToPickup: evalResult.distanceToPickup,
+                  estimatedTravelDistance: evalResult.estimatedTotalDistance,
+                  estimatedTimeSeconds: evalResult.estimatedTimeSeconds,
+                  remainingBatteryAfterTask: evalResult.remainingBatteryAfterTask,
+                  capabilityScore: evalResult.capabilityScore,
+                  evaluation: evalResult,
+                  body: `TASK_BID: ${task.task_id} | Suitability: ${evalResult.suitabilityScore}/100 | Dist: ${evalResult.distanceToPickup}m`,
+                });
+              }, 0);
+            }
           }
         } catch (e) {}
       }
+
+      // Handle TASK_BID: Store peer bid in receiving AMR's local knowledge table & check if ready to propose candidate winner
+      if (message.type === 'TASK_BID' && message.payload?.taskId) {
+        const taskId = message.payload.taskId;
+        targetNode.knownTasks = targetNode.knownTasks || {};
+        if (targetNode.knownTasks[taskId]) {
+          const taskKnowledge = targetNode.knownTasks[taskId];
+          taskKnowledge.peerBids = taskKnowledge.peerBids || {};
+          taskKnowledge.peerBids[message.senderId] = {
+            robotId: message.senderId,
+            timestamp: message.timestamp,
+            eligible: message.payload.eligible ?? true,
+            suitabilityScore: message.payload.suitabilityScore ?? 0,
+            evaluation: message.payload.evaluation,
+          };
+
+          // Check if ready to propose candidate winner (Phase 4D)
+          if (!taskKnowledge.myProposalSent && !taskKnowledge.claimedBy) {
+            try {
+              const determineCandidateWinner = require('../evaluation/TaskEvaluator').determineCandidateWinner;
+              const candidateWinner = determineCandidateWinner(taskKnowledge.evaluation, taskKnowledge.peerBids);
+              if (candidateWinner) {
+                taskKnowledge.myProposalSent = true;
+                taskKnowledge.allocationState = 'PROPOSING';
+
+                // Populate own proposal in local peerProposals table
+                taskKnowledge.peerProposals = taskKnowledge.peerProposals || {};
+                taskKnowledge.peerProposals[targetNode.robotId] = {
+                  robotId: targetNode.robotId,
+                  proposedWinnerId: candidateWinner,
+                  timestamp: message.timestamp,
+                };
+
+                setTimeout(() => {
+                  this.broadcastMessage(targetNode.robotId, 'TASK_WINNER_PROPOSAL', {
+                    taskId,
+                    proposedWinnerId: candidateWinner,
+                    body: `TASK_WINNER_PROPOSAL: Proposing ${candidateWinner} for ${taskId}`,
+                  });
+                }, 0);
+              }
+            } catch (e) {}
+          }
+        }
+      }
+
+      // Handle TASK_WINNER_PROPOSAL: Store peer proposal and check for consensus
+      if (message.type === 'TASK_WINNER_PROPOSAL' && message.payload?.taskId) {
+        const taskId = message.payload.taskId;
+        const proposedWinnerId = message.payload.proposedWinnerId;
+        targetNode.knownTasks = targetNode.knownTasks || {};
+        if (targetNode.knownTasks[taskId]) {
+          const taskKnowledge = targetNode.knownTasks[taskId];
+          taskKnowledge.peerProposals = taskKnowledge.peerProposals || {};
+          taskKnowledge.peerProposals[message.senderId] = {
+            robotId: message.senderId,
+            proposedWinnerId,
+            timestamp: message.timestamp,
+          };
+
+          // Consensus Check: Have all eligible participating nodes agreed on the same candidate winner?
+          const proposals = Object.values(taskKnowledge.peerProposals);
+          const eligibleBidsCount = Object.values(taskKnowledge.peerBids).filter((b) => b.eligible).length;
+          const expectedProposalsCount = Math.max(1, eligibleBidsCount);
+
+          const unanimousConsensus = proposals.length >= expectedProposalsCount && proposals.every((p) => p.proposedWinnerId === proposedWinnerId);
+
+          if (unanimousConsensus && !taskKnowledge.claimedBy) {
+            taskKnowledge.allocationState = 'CONSENSUS';
+            // If targetNode IS the winning robot AND is free (not already occupied with another task), broadcast TASK_CLAIMED
+            const warehouseStoreState = require('../../store/warehouseStore').useWarehouseStore.getState();
+            const myRobot = warehouseStoreState.robots.find((r: any) => r.id === targetNode.robotId);
+            const isFreeToClaim = myRobot && (myRobot.state === 'WAITING' || myRobot.state === 'IDLE') && !myRobot.currentTask;
+
+            if (targetNode.robotId === proposedWinnerId && isFreeToClaim) {
+              taskKnowledge.claimedBy = proposedWinnerId;
+              taskKnowledge.status = 'CLAIMED';
+              taskKnowledge.allocationState = 'CLAIMED';
+              setTimeout(() => {
+                this.broadcastMessage(targetNode.robotId, 'TASK_CLAIMED', {
+                  taskId,
+                  ownerRobotId: proposedWinnerId,
+                  body: `TASK_CLAIMED: Task ${taskId} claimed by ${proposedWinnerId} via P2P Consensus!`,
+                });
+              }, 0);
+            }
+          }
+        }
+      }
+
+      // Handle TASK_CLAIMED: Synchronize local & global task ownership
+      if (message.type === 'TASK_CLAIMED' && message.payload?.taskId) {
+        const taskId = message.payload.taskId;
+        const ownerRobotId = message.payload.ownerRobotId;
+        targetNode.knownTasks = targetNode.knownTasks || {};
+        if (targetNode.knownTasks[taskId]) {
+          targetNode.knownTasks[taskId].claimedBy = ownerRobotId;
+          targetNode.knownTasks[taskId].status = 'CLAIMED';
+          targetNode.knownTasks[taskId].allocationState = 'CLAIMED';
+        }
+
+        // Synchronize global taskStore & warehouseStore ownership
+        try {
+          const useTaskStore = require('../../store/taskStore').useTaskStore.getState;
+          const useWarehouseStore = require('../../store/warehouseStore').useWarehouseStore.getState;
+          
+          const taskStore = useTaskStore();
+          const task = taskStore.tasks.find((t: any) => t.task_id === taskId);
+          if (task && (task.assigned_robot_id === null || task.status === 'PENDING')) {
+            task.assigned_robot_id = ownerRobotId;
+            task.status = 'ASSIGNED';
+            task.assigned_time = new Date().toISOString();
+
+            const warehouseStore = useWarehouseStore();
+            const robot = warehouseStore.robots.find((r: any) => r.id === ownerRobotId);
+            if (robot && (robot.state === 'WAITING' || robot.state === 'IDLE' || robot.path.length === 0)) {
+              warehouseStore.assignTaskToRobot(ownerRobotId, task);
+            }
+          }
+        } catch (e) {}
+      }
+
     };
 
     if (message.receiverId === 'ALL') {
@@ -149,7 +311,6 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
       return false; // Target node offline or not found
     }
   }
-
 
   sendDirectMessage(senderId: string, receiverId: string, type: P2PMessageType, payload?: any): boolean {
     const message: P2PMessage = {
@@ -230,6 +391,14 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
             peer.status = 'OFFLINE';
           }
         });
+      }
+    });
+  }
+
+  removeTaskFromAllNodes(taskId: string): void {
+    this.nodes.forEach((node) => {
+      if (node.knownTasks && node.knownTasks[taskId]) {
+        delete node.knownTasks[taskId];
       }
     });
   }

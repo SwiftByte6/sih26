@@ -4,6 +4,7 @@ import { demoWarehouse } from '../data/demoWarehouse';
 import { findPathAStar } from '../engine/pathfinding';
 import { useTaskStore } from './taskStore';
 import { useP2PStore } from './p2pStore';
+import { resolveLocationCoordinates } from '../engine/evaluation/TaskEvaluator';
 
 export type Task = { id: string, targetRow: number, targetCol: number, assignedTo: string | null };
 
@@ -11,9 +12,19 @@ const MAX_MESSAGES = 200;
 let msgCounter = 0;
 let lastStatusBroadcastTime = 0;
 const STATUS_BROADCAST_INTERVAL_MS = 1000;
+interface RobotTelemetrySnapshot {
+  state: string;
+  col: number;
+  row: number;
+  battery: number;
+  task: string | null;
+  isOnline: boolean;
+}
+
 const announcedTaskIds = new Set<string>();
-
-
+const announcedTaskTimestamps = new Map<string, number>();
+const lastRobotTelemetry = new Map<string, RobotTelemetrySnapshot>();
+const lastConflictTime = new Map<string, number>();
 
 function createMsg(sender: string, receiver: string, message: string, category: CommunicationMessage['category'], priority: CommunicationMessage['priority'] = 'NORMAL'): CommunicationMessage {
   msgCounter++;
@@ -66,6 +77,8 @@ interface WarehouseState {
 
   addCommunication: (msg: CommunicationMessage) => void;
   clearCommunications: () => void;
+  assignTaskToRobot: (robotId: string, task: any) => void;
+  removeAnnouncedTaskId: (taskId: string) => void;
   
   tick: () => void;
 }
@@ -94,6 +107,10 @@ export const useWarehouseStore = create<WarehouseState>((set) => ({
   toggleSimulation: () => set((state) => ({ isRunning: !state.isRunning })),
   stopSimulation: () => set({ isRunning: false }),
   resetSimulation: () => {
+    announcedTaskIds.clear();
+    announcedTaskTimestamps.clear();
+    lastRobotTelemetry.clear();
+    lastConflictTime.clear();
     useP2PStore.getState().resetP2PNetwork();
     set({ 
       isRunning: false, 
@@ -104,6 +121,10 @@ export const useWarehouseStore = create<WarehouseState>((set) => ({
       communications: [],
       activeCommLinks: []
     });
+  },
+  removeAnnouncedTaskId: (taskId: string) => {
+    announcedTaskIds.delete(taskId);
+    announcedTaskTimestamps.delete(taskId);
   },
   setScale: (scale) => set({ scale }),
   setPan: (pan) => set({ pan }),
@@ -176,6 +197,33 @@ export const useWarehouseStore = create<WarehouseState>((set) => ({
     };
   }),
 
+  assignTaskToRobot: (robotId: string, task: any) => set((state) => {
+    const robotIndex = state.robots.findIndex((r) => r.id === robotId);
+    if (robotIndex === -1) return state;
+
+    const robot = state.robots[robotIndex];
+    const pickupCoord = resolveLocationCoordinates(task.pickup_point, state.pois, state.shelves);
+    const dropCoord = resolveLocationCoordinates(task.drop_point, state.pois, state.shelves);
+
+    if (!pickupCoord || !dropCoord) return state;
+
+    const path = findPathAStar(state, robot.row, robot.col, pickupCoord.row, pickupCoord.col);
+
+    const updatedRobots = [...state.robots];
+    updatedRobots[robotIndex] = {
+      ...robot,
+      state: 'MOVING' as const,
+      currentTask: task.task_id,
+      currentTaskId: task.task_id,
+      taskPhase: 'TO_PICKUP' as const,
+      pickupPoint: pickupCoord,
+      dropPoint: dropCoord,
+      path: path.length > 0 ? path : [{ col: robot.col, row: robot.row }],
+    };
+
+    return { robots: updatedRobots };
+  }),
+
 
   updateRobot: (id, updates) => set((state) => ({
     robots: state.robots.map(r => r.id === id ? { ...r, ...updates } : r)
@@ -212,46 +260,99 @@ export const useWarehouseStore = create<WarehouseState>((set) => ({
     // Process P2P Heartbeats & Peer Discovery in Simulated Network
     p2pStore.processHeartbeats();
 
-    // Controlled P2P STATUS_UPDATE broadcast (every 1000 ms)
-    if (now - lastStatusBroadcastTime >= STATUS_BROADCAST_INTERVAL_MS) {
-      lastStatusBroadcastTime = now;
-      state.robots.forEach((robot) => {
-        const isOnline = robot.isOnline ?? true;
-        if (isOnline) {
-          const taskLabel = robot.currentTask || robot.currentTaskId || null;
-          p2pStore.broadcastMessage(robot.id, 'STATUS_UPDATE', {
-            robotId: robot.id,
-            position: { col: robot.col, row: robot.row },
-            status: robot.state,
-            battery: Math.round(robot.battery),
-            task: taskLabel,
-            speed: robot.speed,
-            body: `Pos (${robot.col},${robot.row}) | ${robot.state} | Battery: ${Math.round(robot.battery)}%${taskLabel ? ` | Task: ${taskLabel}` : ''}`,
-          });
-        }
-      });
-    }
+    // Event / Change-Driven P2P STATUS_UPDATE broadcast:
+    // Broadcast ONLY when meaningful state, task, position (>= 5 cells), battery (>= 5%), or online status changes.
+    state.robots.forEach((robot) => {
+      const isOnline = robot.isOnline ?? true;
+      if (!isOnline) return;
+
+      const taskLabel = robot.currentTask || robot.currentTaskId || null;
+      const currentSnap = {
+        state: robot.state,
+        col: robot.col,
+        row: robot.row,
+        battery: Math.round(robot.battery),
+        task: taskLabel,
+        isOnline,
+      };
+
+      const prev = lastRobotTelemetry.get(robot.id);
+      if (!prev) {
+        // Initial snapshot registration (broadcast initial status once)
+        lastRobotTelemetry.set(robot.id, currentSnap);
+        p2pStore.broadcastMessage(robot.id, 'STATUS_UPDATE', {
+          robotId: robot.id,
+          position: { col: robot.col, row: robot.row },
+          status: robot.state,
+          battery: currentSnap.battery,
+          task: taskLabel,
+          speed: robot.speed,
+          body: `Initial Status: ${robot.state} | Pos (${robot.col},${robot.row}) | Batt: ${currentSnap.battery}%${taskLabel ? ` | Task: ${taskLabel}` : ''}`,
+        });
+        return;
+      }
+
+      // Check meaningful change conditions:
+      const stateChanged = prev.state !== currentSnap.state;
+      const taskChanged = prev.task !== currentSnap.task;
+      const onlineChanged = prev.isOnline !== currentSnap.isOnline;
+      const posDist = Math.abs(currentSnap.col - prev.col) + Math.abs(currentSnap.row - prev.row);
+      const posChangedMeaningfully = posDist >= 5;
+      const battChangedMeaningfully = Math.abs(currentSnap.battery - prev.battery) >= 5;
+
+      if (stateChanged || taskChanged || onlineChanged || posChangedMeaningfully || battChangedMeaningfully) {
+        lastRobotTelemetry.set(robot.id, currentSnap);
+
+        const changes: string[] = [];
+        if (stateChanged) changes.push(`State: ${prev.state} → ${currentSnap.state}`);
+        if (taskChanged) changes.push(`Task: ${prev.task || 'None'} → ${currentSnap.task || 'None'}`);
+        if (battChangedMeaningfully) changes.push(`Batt: ${prev.battery}% → ${currentSnap.battery}%`);
+        if (posChangedMeaningfully) changes.push(`Moved to (${currentSnap.col},${currentSnap.row})`);
+
+        p2pStore.broadcastMessage(robot.id, 'STATUS_UPDATE', {
+          robotId: robot.id,
+          position: { col: robot.col, row: robot.row },
+          status: robot.state,
+          battery: currentSnap.battery,
+          task: taskLabel,
+          speed: robot.speed,
+          body: `STATUS_UPDATE [${changes.join(' | ')}] Pos (${robot.col},${robot.row}) | Batt: ${currentSnap.battery}%`,
+        });
+      }
+    });
 
     const taskStore = useTaskStore.getState();
     const pendingTasks = taskStore.getPendingTasks();
 
-    // Broadcast TASK_ANNOUNCEMENT for newly available pending tasks
-    pendingTasks.forEach((t) => {
-      if (!announcedTaskIds.has(t.task_id)) {
-        announcedTaskIds.add(t.task_id);
-        p2pStore.broadcastMessage('TASK_DISPATCH', 'TASK_ANNOUNCEMENT', {
-          taskId: t.task_id,
-          task: t,
-          pickupPoint: t.pickup_point,
-          dropPoint: t.drop_point,
-          weight: t.weight,
-          priority: t.priority,
-          requiredCapability: t.requiredCapability,
-          requiredSensingRadius: t.requiredSensingRadius,
-          body: `TASK_ANNOUNCEMENT: ${t.task_id} [${t.task_type}] Pickup: ${t.pickup_point} -> Drop: ${t.drop_point} (Weight: ${t.weight}kg)`,
-        });
-      }
-    });
+    // Announce the top unassigned pending task that has not been announced yet,
+    // or re-announce an unassigned pending task if 4+ seconds have elapsed.
+    // We announce 1 task at a time to allow the winner to transition to MOVING before the next task is announced.
+    const unassignedTasks = pendingTasks.filter((t) => t.status === 'PENDING' && t.assigned_robot_id === null);
+
+    let taskToAnnounce = unassignedTasks.find((t) => !announcedTaskIds.has(t.task_id));
+    if (!taskToAnnounce) {
+      taskToAnnounce = unassignedTasks.find((t) => {
+        const lastTime = announcedTaskTimestamps.get(t.task_id);
+        return lastTime && (now - lastTime > 4000);
+      });
+    }
+
+    if (taskToAnnounce) {
+      announcedTaskIds.add(taskToAnnounce.task_id);
+      announcedTaskTimestamps.set(taskToAnnounce.task_id, now);
+
+      p2pStore.broadcastMessage('TASK_DISPATCH', 'TASK_ANNOUNCEMENT', {
+        taskId: taskToAnnounce.task_id,
+        task: taskToAnnounce,
+        pickupPoint: taskToAnnounce.pickup_point,
+        dropPoint: taskToAnnounce.drop_point,
+        weight: taskToAnnounce.weight,
+        priority: taskToAnnounce.priority,
+        requiredCapability: taskToAnnounce.requiredCapability,
+        requiredSensingRadius: taskToAnnounce.requiredSensingRadius,
+        body: `TASK_ANNOUNCEMENT: ${taskToAnnounce.task_id} [${taskToAnnounce.task_type}] Pickup: ${taskToAnnounce.pickup_point} -> Drop: ${taskToAnnounce.drop_point} (Weight: ${taskToAnnounce.weight}kg)`,
+      });
+    }
 
     const newMessages: CommunicationMessage[] = [];
     const newLinks: ActiveCommLink[] = [];
@@ -281,6 +382,10 @@ export const useWarehouseStore = create<WarehouseState>((set) => ({
         let dropCoord = null;
 
         for (const t of pendingTasks) {
+          // Bypass legacy random assignment for tasks participating in P2P decentralized allocation
+          if (announcedTaskIds.has(t.task_id)) {
+            continue;
+          }
           pickupCoord = findLocationCoordinates(t.pickup_point);
           dropCoord = findLocationCoordinates(t.drop_point);
           if (pickupCoord && dropCoord && t.assigned_robot_id === null) {
@@ -294,8 +399,8 @@ export const useWarehouseStore = create<WarehouseState>((set) => ({
           const newPath = findPathAStar(state, robot.row, robot.col, pickupCoord.row, pickupCoord.col);
           
           if (newPath.length > 0) {
-            newMessages.push(createMsg('SYSTEM', robot.id, `Task assigned: [${assignedTask.task_id}] Pickup at ${pickupCoord.label}`, 'TASK', 'NORMAL'));
-            newMessages.push(createMsg(robot.id, 'ALL', `Heading to pickup ${pickupCoord.label}`, 'NAVIGATION', 'NORMAL'));
+            p2pStore.sendDirectMessage('SYSTEM', robot.id, 'TEXT', { body: `Task assigned: [${assignedTask.task_id}] Pickup at ${pickupCoord.label}` });
+            p2pStore.broadcastMessage(robot.id, 'TEXT', { body: `Heading to pickup ${pickupCoord.label}` });
             newLinks.push({ from: robot.id, to: 'ALL', expires: now + 2000 });
             return { 
               ...robot, 
@@ -310,7 +415,7 @@ export const useWarehouseStore = create<WarehouseState>((set) => ({
           } else {
             // Pathfinding failed, fail task
             taskStore.failTask(assignedTask.task_id, 'No path to pickup');
-            newMessages.push(createMsg(robot.id, 'SYSTEM', `Cannot find path to pickup ${pickupCoord.label}`, 'FAILURE', 'CRITICAL'));
+            p2pStore.sendDirectMessage(robot.id, 'SYSTEM', 'TEXT', { body: `Cannot find path to pickup ${pickupCoord.label}` });
           }
         }
       }
@@ -325,31 +430,35 @@ export const useWarehouseStore = create<WarehouseState>((set) => ({
         );
 
         if (isBlocked) {
-          newMessages.push(createMsg(robot.id, 'ALL', `Obstacle detected at (${nextCell.row},${nextCell.col}). Path blocked!`, 'OBSTACLE', 'WARNING'));
+          p2pStore.broadcastMessage(robot.id, 'TEXT', { body: `Obstacle detected at (${nextCell.col},${nextCell.row}). Path blocked!` });
           newLinks.push({ from: robot.id, to: 'ALL', expires: now + 3000 });
           
           const target = robot.path[robot.path.length - 1];
           const newPath = findPathAStar(state, robot.row, robot.col, target.row, target.col);
           if (newPath.length > 0) {
-            newMessages.push(createMsg(robot.id, 'ALL', `Recalculating route... New path confirmed`, 'NAVIGATION', 'IMPORTANT'));
+            p2pStore.broadcastMessage(robot.id, 'TEXT', { body: `Recalculating route... New path confirmed` });
             return { ...robot, path: newPath };
           } else {
-            newMessages.push(createMsg(robot.id, 'ALL', `No alternate route available. Waiting.`, 'OBSTACLE', 'CRITICAL'));
+            p2pStore.broadcastMessage(robot.id, 'TEXT', { body: `No alternate route available. Waiting.` });
             return { ...robot, state: 'WAITING' as const, path: [] };
           }
         }
         
-        // Check for same-cell conflicts with other robots
+        // Check for same-cell conflicts with other robots (throttled to 1 warning per 3s per conflict pair)
         const conflictRobot = state.robots.find(r => r.id !== robot.id && r.row === nextCell.row && r.col === nextCell.col);
         if (conflictRobot) {
-          newMessages.push(createMsg(robot.id, conflictRobot.id, `Collision risk at (${nextCell.row},${nextCell.col}). I'll wait.`, 'COORDINATION', 'WARNING'));
+          const conflictKey = `${robot.id}-${conflictRobot.id}`;
+          if (!lastConflictTime.has(conflictKey) || (now - (lastConflictTime.get(conflictKey) || 0) > 3000)) {
+            lastConflictTime.set(conflictKey, now);
+            p2pStore.sendDirectMessage(robot.id, conflictRobot.id, 'TEXT', { body: `Collision risk at (${nextCell.col},${nextCell.row}). I'll wait.` });
+          }
           newLinks.push({ from: robot.id, to: conflictRobot.id, expires: now + 2500 });
           return robot; // skip this tick, wait
         }
 
         const approachingIntersection = state.intersections.find(i => i.row === nextCell.row && i.col === nextCell.col);
         if (approachingIntersection) {
-          newMessages.push(createMsg(robot.id, 'ALL', `Approaching intersection ${approachingIntersection.id}`, 'COORDINATION', 'NORMAL'));
+          p2pStore.broadcastMessage(robot.id, 'TEXT', { body: `Approaching intersection ${approachingIntersection.id}` });
         }
 
         // Move to next cell
@@ -363,7 +472,7 @@ export const useWarehouseStore = create<WarehouseState>((set) => ({
           if (robot.taskPhase === 'TO_PICKUP' && robot.currentTaskId && robot.dropPoint) {
             // Reached pickup, start going to drop
             taskStore.startTask(robot.currentTaskId);
-            newMessages.push(createMsg(robot.id, 'ALL', `Picked up item. Heading to ${robot.dropPoint.label}`, 'TASK', 'NORMAL'));
+            p2pStore.broadcastMessage(robot.id, 'TEXT', { body: `Picked up item. Heading to ${robot.dropPoint.label}` });
             newPath = findPathAStar(state, nextCell.row, nextCell.col, robot.dropPoint.row, robot.dropPoint.col);
             newTaskPhase = 'TO_DROP';
             if (newPath.length === 0) {
@@ -375,7 +484,7 @@ export const useWarehouseStore = create<WarehouseState>((set) => ({
           } else if (robot.taskPhase === 'TO_DROP' && robot.currentTaskId) {
             // Reached drop, task complete
             taskStore.completeTask(robot.currentTaskId);
-            newMessages.push(createMsg(robot.id, 'ALL', `Task [${robot.currentTaskId}] completed at ${robot.dropPoint?.label}.`, 'TASK', 'NORMAL'));
+            p2pStore.broadcastMessage(robot.id, 'TEXT', { body: `Task [${robot.currentTaskId}] completed at ${robot.dropPoint?.label}.` });
             newLinks.push({ from: robot.id, to: 'ALL', expires: now + 2000 });
             newState = 'WAITING';
             newTaskPhase = null;
@@ -389,7 +498,7 @@ export const useWarehouseStore = create<WarehouseState>((set) => ({
         // Battery warning
         const newBattery = robot.battery - 0.3;
         if (newBattery <= 20 && robot.battery > 20) {
-          newMessages.push(createMsg(robot.id, 'ALL', `Battery at ${Math.round(newBattery)}%. Requesting charger.`, 'BATTERY', 'WARNING'));
+          p2pStore.broadcastMessage(robot.id, 'TEXT', { body: `Battery at ${Math.round(newBattery)}%. Requesting charger.` });
         }
         
         return {
@@ -404,6 +513,28 @@ export const useWarehouseStore = create<WarehouseState>((set) => ({
           battery: Math.max(0, newBattery)
         };
       }
+
+      if (robot.state === 'CHARGING') {
+        const newBattery = Math.min(100, robot.battery + 1.0);
+        if (newBattery >= 100) {
+          p2pStore.broadcastMessage(robot.id, 'STATUS_UPDATE', {
+            robotId: robot.id,
+            status: 'WAITING',
+            battery: 100,
+            body: `CHARGING complete (100%). Transitioning to WAITING.`,
+          });
+          return {
+            ...robot,
+            battery: 100,
+            state: 'WAITING' as const,
+          };
+        }
+        return {
+          ...robot,
+          battery: newBattery,
+        };
+      }
+
       return robot;
     });
 

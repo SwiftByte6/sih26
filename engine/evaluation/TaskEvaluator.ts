@@ -16,9 +16,98 @@ export interface EvaluationTestSummary {
   results: EvaluationTestResult[];
 }
 
+export interface CandidateBid {
+  robotId: string;
+  eligible: boolean;
+  suitabilityScore: number;
+  estimatedTimeSeconds?: number;
+  distanceToPickup?: number;
+}
+
+/**
+ * Deterministic candidate winner selection:
+ * 1. Higher suitabilityScore
+ * 2. Lower estimatedTimeSeconds
+ * 3. Lower distanceToPickup
+ * 4. Lower robotId (alphabetically)
+ */
+export function determineCandidateWinner(
+  myEval: TaskEvaluationResult | undefined,
+  peerBids: Record<string, { robotId: string; eligible: boolean; suitabilityScore: number; evaluation?: TaskEvaluationResult }>
+): string | null {
+  const candidateBids: CandidateBid[] = [];
+
+  // Add my evaluation if eligible
+  if (myEval && myEval.eligible) {
+    candidateBids.push({
+      robotId: myEval.robotId,
+      eligible: true,
+      suitabilityScore: myEval.suitabilityScore,
+      estimatedTimeSeconds: myEval.estimatedTimeSeconds,
+      distanceToPickup: myEval.distanceToPickup,
+    });
+  }
+
+  // Add peer bids if eligible
+  if (peerBids) {
+    Object.values(peerBids).forEach((peerBid) => {
+      if (peerBid.eligible && peerBid.suitabilityScore > 0) {
+        candidateBids.push({
+          robotId: peerBid.robotId,
+          eligible: true,
+          suitabilityScore: peerBid.suitabilityScore,
+          estimatedTimeSeconds: peerBid.evaluation?.estimatedTimeSeconds ?? 60,
+          distanceToPickup: peerBid.evaluation?.distanceToPickup ?? 20,
+        });
+      }
+    });
+  }
+
+  if (candidateBids.length === 0) return null;
+
+  candidateBids.sort((a, b) => {
+    // 1. Higher suitability score
+    if (b.suitabilityScore !== a.suitabilityScore) {
+      return b.suitabilityScore - a.suitabilityScore;
+    }
+    // 2. Lower estimated travel time
+    const timeA = a.estimatedTimeSeconds ?? 60;
+    const timeB = b.estimatedTimeSeconds ?? 60;
+    if (timeA !== timeB) {
+      return timeA - timeB;
+    }
+    // 3. Lower distance to pickup
+    const distA = a.distanceToPickup ?? 20;
+    const distB = b.distanceToPickup ?? 20;
+    if (distA !== distB) {
+      return distA - distB;
+    }
+    // 4. Deterministic tie-breaker: Robot ID string comparison
+    return a.robotId.localeCompare(b.robotId);
+  });
+
+  return candidateBids[0].robotId;
+}
+
 /**
  * Resolves grid coordinates for a location string (e.g. "PICKUP A", "Storage-01", "S5")
  */
+
+const LOCATION_ALIAS_MAP: Record<string, string> = {
+  'pickup a': 'POI1',
+  'pickup b': 'POI2',
+  'drop a': 'POI1',
+  'drop b': 'POI2',
+  'storage-01': 'POI4',
+  'storage-02': 'POI5',
+  'packing area b': 'POI6',
+  'packing b': 'POI6',
+  'p3': 'POI7',
+  'p1': 'POI8',
+  'd5': 'POI2',
+  'd8': 'POI2',
+};
+
 export function resolveLocationCoordinates(
   locString: string,
   pois: PointOfInterest[],
@@ -27,13 +116,32 @@ export function resolveLocationCoordinates(
   if (!locString) return null;
   const norm = locString.toLowerCase().trim();
 
-  // Look up in POIs
-  const poi = pois.find((p) => p.label.toLowerCase().trim() === norm || p.id.toLowerCase().trim() === norm);
-  if (poi) return { col: poi.col, row: poi.row, label: poi.label };
+  // 1. Exact POI ID match
+  const poiById = pois.find((p) => p.id.toLowerCase().trim() === norm);
+  if (poiById) return { col: poiById.col, row: poiById.row, label: poiById.label };
 
-  // Look up in Shelves
-  const shelf = shelves.find((s) => s.id.toLowerCase().trim() === norm || norm.includes(s.id.toLowerCase().trim()));
-  if (shelf) return { col: shelf.col, row: shelf.row - 1, label: shelf.id };
+  // 2. Exact normalized POI label match
+  const poiByLabel = pois.find((p) => p.label.toLowerCase().trim() === norm);
+  if (poiByLabel) return { col: poiByLabel.col, row: poiByLabel.row, label: poiByLabel.label };
+
+  // 3. Exact normalized task alias match
+  const aliasTargetId = LOCATION_ALIAS_MAP[norm];
+  if (aliasTargetId) {
+    const aliasedPoi = pois.find((p) => p.id.toLowerCase().trim() === aliasTargetId.toLowerCase().trim());
+    if (aliasedPoi) return { col: aliasedPoi.col, row: aliasedPoi.row, label: aliasedPoi.label };
+    const aliasedShelf = shelves.find((s) => s.id.toLowerCase().trim() === aliasTargetId.toLowerCase().trim());
+    if (aliasedShelf) return { col: aliasedShelf.col, row: aliasedShelf.row - 1, label: aliasedShelf.id };
+  }
+
+  // 4. Exact shelf ID match
+  const shelfById = shelves.find((s) => s.id.toLowerCase().trim() === norm);
+  if (shelfById) return { col: shelfById.col, row: shelfById.row - 1, label: shelfById.id };
+
+  // 5. Exact normalized shelf label match
+  const shelfByLabel = shelves.find(
+    (s) => s.id.toLowerCase().trim() === `shelf ${norm}` || s.id.toLowerCase().trim() === `shelf-${norm}`
+  );
+  if (shelfByLabel) return { col: shelfByLabel.col, row: shelfByLabel.row - 1, label: shelfByLabel.id };
 
   return null;
 }
@@ -89,6 +197,9 @@ export function evaluateTask(
   }
   if (robot.state === 'ERROR') {
     ineligibilityReasons.push(`Robot ${robot.id} is in ERROR state.`);
+  }
+  if (robot.currentTask || robot.state === 'MOVING') {
+    ineligibilityReasons.push(`Robot ${robot.id} is currently occupied with active task "${robot.currentTask || 'MOVING'}".`);
   }
 
   // Rule 2: Payload Capacity Check

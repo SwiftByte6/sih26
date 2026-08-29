@@ -26,6 +26,7 @@ interface P2PState {
   sendDirectMessage: (senderId: string, receiverId: string, type: P2PMessageType, payload?: any) => boolean;
   broadcastMessage: (senderId: string, type: P2PMessageType, payload?: any) => boolean;
   setRobotOnlineStatus: (robotId: string, isOnline: boolean) => void;
+  removeTaskFromAllNodes: (taskId: string) => void;
   processHeartbeats: () => void;
   resetP2PNetwork: () => void;
   runP2PTestSuite: () => P2PTestSummary;
@@ -51,6 +52,7 @@ export const useP2PStore = create<P2PState>((set, get) => ({
     const success = networkInstance.sendDirectMessage(senderId, receiverId, type, payload);
     if (success && type !== 'HEARTBEAT') {
       const bodyText = typeof payload === 'string' ? payload : payload?.body || payload?.status || type;
+      const category = (type.startsWith('TASK_') ? 'TASK' : type === 'STATUS_UPDATE' ? 'SYSTEM' : 'COORDINATION') as any;
       try {
         const warehouseStore = require('./warehouseStore').useWarehouseStore;
         warehouseStore.getState().addCommunication({
@@ -58,7 +60,7 @@ export const useP2PStore = create<P2PState>((set, get) => ({
           timestamp: Date.now(),
           sender: senderId,
           receiver: receiverId,
-          category: type === 'STATUS_UPDATE' ? 'SYSTEM' : 'COORDINATION',
+          category,
           priority: 'NORMAL',
           message: `[${type}] ${bodyText}`,
         });
@@ -72,6 +74,7 @@ export const useP2PStore = create<P2PState>((set, get) => ({
     const success = networkInstance.broadcastMessage(senderId, type, payload);
     if (success && type !== 'HEARTBEAT') {
       const bodyText = typeof payload === 'string' ? payload : payload?.body || payload?.status || type;
+      const category = (type.startsWith('TASK_') ? 'TASK' : type === 'STATUS_UPDATE' ? 'SYSTEM' : 'COORDINATION') as any;
       try {
         const warehouseStore = require('./warehouseStore').useWarehouseStore;
         warehouseStore.getState().addCommunication({
@@ -79,7 +82,7 @@ export const useP2PStore = create<P2PState>((set, get) => ({
           timestamp: Date.now(),
           sender: senderId,
           receiver: 'ALL',
-          category: type === 'STATUS_UPDATE' ? 'SYSTEM' : 'COORDINATION',
+          category,
           priority: 'NORMAL',
           message: `[${type}] ${bodyText}`,
         });
@@ -92,6 +95,11 @@ export const useP2PStore = create<P2PState>((set, get) => ({
 
   setRobotOnlineStatus: (robotId, isOnline) => {
     networkInstance.setNodeOnlineStatus(robotId, isOnline);
+    get().processHeartbeats(); // sync store nodes snapshot
+  },
+
+  removeTaskFromAllNodes: (taskId) => {
+    networkInstance.removeTaskFromAllNodes(taskId);
     get().processHeartbeats(); // sync store nodes snapshot
   },
 

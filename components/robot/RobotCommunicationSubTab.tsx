@@ -31,7 +31,7 @@ export const RobotCommunicationSubTab: React.FC = () => {
           const isSelected = selectedItemId === robot.id;
           const p2pNode = p2pNodes[robot.id];
           const isOnline = p2pNode ? p2pNode.isOnline : (robot.isOnline ?? true);
-          const history = p2pNode ? p2pNode.history : [];
+          const history = p2pNode ? p2pNode.history.filter((m) => m.type !== 'HEARTBEAT') : [];
 
           return (
             <div

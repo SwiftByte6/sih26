@@ -6,12 +6,22 @@ import { Network, CheckCircle2, XCircle, Play, RefreshCw, Send, Radio, ShieldChe
 
 import { runTaskEvaluationTestSuite, EvaluationTestSummary } from '../../engine/evaluation/TaskEvaluator';
 import { runTaskAnnouncementTestSuite, AnnouncementTestSummary } from '../../engine/p2p/TaskAnnouncementTestSuite';
+import { runTaskBidExchangeTestSuite, BidExchangeTestSummary } from '../../engine/p2p/TaskBidExchangeTestSuite';
+import { runTaskConsensusTestSuite, ConsensusTestSummary } from '../../engine/p2p/TaskConsensusTestSuite';
+import { runTaskDeleteTestSuite, DeleteTestSummary } from '../../engine/p2p/TaskDeleteTestSuite';
+import { runStatusThrottleTestSuite, StatusThrottleTestSummary } from '../../engine/p2p/StatusThrottleTestSuite';
+import { runDecentralizedAllocationEndToEndTestSuite, E2ETestSummary } from '../../engine/p2p/DecentralizedAllocationEndToEndTestSuite';
 
 export const P2PNetworkTester: React.FC = () => {
   const { nodes, testSummary, setRobotOnlineStatus, sendDirectMessage, broadcastMessage, runP2PTestSuite, resetP2PNetwork } = useP2PStore();
-  const [activeTab, setActiveTab] = useState<'TESTS' | 'EVAL_TESTS' | 'ANNOUNCE_TESTS' | 'NODES' | 'SEND'>('TESTS');
+  const [activeTab, setActiveTab] = useState<'TESTS' | 'EVAL_TESTS' | 'ANNOUNCE_TESTS' | 'BID_TESTS' | 'CONSENSUS_TESTS' | 'DELETE_TESTS' | 'THROTTLE_TESTS' | 'E2E_TESTS' | 'NODES' | 'SEND'>('TESTS');
   const [evalTestSummary, setEvalTestSummary] = useState<EvaluationTestSummary | null>(null);
   const [announceTestSummary, setAnnounceTestSummary] = useState<AnnouncementTestSummary | null>(null);
+  const [bidTestSummary, setBidTestSummary] = useState<BidExchangeTestSummary | null>(null);
+  const [consensusTestSummary, setConsensusTestSummary] = useState<ConsensusTestSummary | null>(null);
+  const [deleteTestSummary, setDeleteTestSummary] = useState<DeleteTestSummary | null>(null);
+  const [throttleTestSummary, setThrottleTestSummary] = useState<StatusThrottleTestSummary | null>(null);
+  const [e2eTestSummary, setE2eTestSummary] = useState<E2ETestSummary | null>(null);
 
   // Custom Message Form State
   const [senderId, setSenderId] = useState('AMR-01');
@@ -62,6 +72,46 @@ export const P2PNetworkTester: React.FC = () => {
           ANNOUNCE (4B)
         </button>
         <button
+          onClick={() => setActiveTab('BID_TESTS')}
+          className={`flex-1 py-1.5 px-2 font-semibold text-[10px] tracking-wide border-r border-border transition-colors ${
+            activeTab === 'BID_TESTS' ? 'bg-panel text-accent border-b-2 border-b-accent' : 'text-muted hover:text-text'
+          }`}
+        >
+          BIDS (4C)
+        </button>
+        <button
+          onClick={() => setActiveTab('CONSENSUS_TESTS')}
+          className={`flex-1 py-1.5 px-2 font-semibold text-[10px] tracking-wide border-r border-border transition-colors ${
+            activeTab === 'CONSENSUS_TESTS' ? 'bg-panel text-accent border-b-2 border-b-accent' : 'text-muted hover:text-text'
+          }`}
+        >
+          CONSENSUS (4D)
+        </button>
+        <button
+          onClick={() => setActiveTab('DELETE_TESTS')}
+          className={`flex-1 py-1.5 px-2 font-semibold text-[10px] tracking-wide border-r border-border transition-colors ${
+            activeTab === 'DELETE_TESTS' ? 'bg-panel text-accent border-b-2 border-b-accent' : 'text-muted hover:text-text'
+          }`}
+        >
+          DELETE (4E)
+        </button>
+        <button
+          onClick={() => setActiveTab('THROTTLE_TESTS')}
+          className={`flex-1 py-1.5 px-2 font-semibold text-[10px] tracking-wide border-r border-border transition-colors ${
+            activeTab === 'THROTTLE_TESTS' ? 'bg-panel text-accent border-b-2 border-b-accent' : 'text-muted hover:text-text'
+          }`}
+        >
+          THROTTLE (4F)
+        </button>
+        <button
+          onClick={() => setActiveTab('E2E_TESTS')}
+          className={`flex-1 py-1.5 px-2 font-semibold text-[10px] tracking-wide border-r border-border transition-colors ${
+            activeTab === 'E2E_TESTS' ? 'bg-panel text-accent border-b-2 border-b-accent' : 'text-muted hover:text-text'
+          }`}
+        >
+          END-TO-END (E2E)
+        </button>
+        <button
           onClick={() => setActiveTab('NODES')}
           className={`flex-1 py-1.5 px-2 font-semibold text-[10px] tracking-wide border-r border-border transition-colors ${
             activeTab === 'NODES' ? 'bg-panel text-accent border-b-2 border-b-accent' : 'text-muted hover:text-text'
@@ -81,6 +131,268 @@ export const P2PNetworkTester: React.FC = () => {
 
       {/* Main Tab View Area */}
       <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-2">
+        {/* END-TO-END DECENTRALIZED ALLOCATION TEST LAB TAB */}
+        {activeTab === 'E2E_TESTS' && (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between bg-workspace p-2 border border-border rounded-sm">
+              <div className="flex items-center gap-1.5">
+                <Network size={14} className="text-accent" />
+                <span className="font-bold">End-to-End Decentralized Allocation & Architecture Test Suite</span>
+              </div>
+              <button
+                onClick={() => setE2eTestSummary(runDecentralizedAllocationEndToEndTestSuite())}
+                className="flex items-center gap-1 px-2 py-1 bg-accent text-white rounded-sm hover:bg-opacity-90 transition-colors font-medium text-[10px]"
+              >
+                <Play size={11} />
+                Run Full E2E Suite
+              </button>
+            </div>
+
+            {e2eTestSummary ? (
+              <div className="flex flex-col gap-1.5">
+                <div className="flex justify-between items-center bg-app p-1.5 border border-border rounded-sm">
+                  <span className="font-mono text-[10px]">Passed: {e2eTestSummary.passCount} / {e2eTestSummary.totalTests}</span>
+                  <span className={`font-bold px-1.5 py-0.5 rounded-sm text-[9px] ${
+                    e2eTestSummary.failCount === 0 ? 'bg-success text-white' : 'bg-danger text-white'
+                  }`}>
+                    {e2eTestSummary.failCount === 0 ? 'ALL 15 TESTS PASSED' : `${e2eTestSummary.failCount} FAILED`}
+                  </span>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  {e2eTestSummary.results.map((res, idx) => (
+                    <div
+                      key={idx}
+                      className={`p-2 border rounded-sm flex flex-col gap-1 ${
+                        res.passed ? 'bg-emerald-50/50 border-emerald-300 text-emerald-900' : 'bg-rose-50/50 border-rose-300 text-rose-900'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 font-bold">
+                        {res.passed ? <CheckCircle2 size={13} className="text-emerald-600 flex-shrink-0" /> : <XCircle size={13} className="text-rose-600 flex-shrink-0" />}
+                        <span>{res.testName}</span>
+                      </div>
+                      <div className="text-[10px] text-muted font-mono leading-tight pl-4">{res.details}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center text-muted italic my-4 text-[10px]">
+                Click "Run Full E2E Suite" to verify the complete P2P message chain, self-bid inclusion, deterministic candidate winner agreement, consensus, single claim broadcast, edge cases A-J, and legacy random engine non-interference (TEST 1 - TEST 15).
+              </div>
+            )}
+          </div>
+        )}
+        {/* STATUS UPDATE THROTTLE TEST LAB TAB */}
+        {activeTab === 'THROTTLE_TESTS' && (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between bg-workspace p-2 border border-border rounded-sm">
+              <div className="flex items-center gap-1.5">
+                <Network size={14} className="text-accent" />
+                <span className="font-bold">Status Update Throttling Test Suite</span>
+              </div>
+              <button
+                onClick={() => setThrottleTestSummary(runStatusThrottleTestSuite())}
+                className="flex items-center gap-1 px-2 py-1 bg-accent text-white rounded-sm hover:bg-opacity-90 transition-colors font-medium text-[10px]"
+              >
+                <Play size={11} />
+                Run Throttle Suite
+              </button>
+            </div>
+
+            {throttleTestSummary ? (
+              <div className="flex flex-col gap-1.5">
+                <div className="flex justify-between items-center bg-app p-1.5 border border-border rounded-sm">
+                  <span className="font-mono text-[10px]">Passed: {throttleTestSummary.passCount} / {throttleTestSummary.totalTests}</span>
+                  <span className={`font-bold px-1.5 py-0.5 rounded-sm text-[9px] ${
+                    throttleTestSummary.failCount === 0 ? 'bg-success text-white' : 'bg-danger text-white'
+                  }`}>
+                    {throttleTestSummary.failCount === 0 ? 'ALL 12 TESTS PASSED' : `${throttleTestSummary.failCount} FAILED`}
+                  </span>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  {throttleTestSummary.results.map((res, idx) => (
+                    <div
+                      key={idx}
+                      className={`p-2 border rounded-sm flex flex-col gap-1 ${
+                        res.passed ? 'bg-emerald-50/50 border-emerald-300 text-emerald-900' : 'bg-rose-50/50 border-rose-300 text-rose-900'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 font-bold">
+                        {res.passed ? <CheckCircle2 size={13} className="text-emerald-600 flex-shrink-0" /> : <XCircle size={13} className="text-rose-600 flex-shrink-0" />}
+                        <span>{res.testName}</span>
+                      </div>
+                      <div className="text-[10px] text-muted font-mono leading-tight pl-4">{res.details}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center text-muted italic my-4 text-[10px]">
+                Click "Run Throttle Suite" to verify 0 status update spamming over 10s, internal heartbeat separation, event-driven state/task/battery/position triggers, and Phase 4 allocation message integrity (TEST 1 - TEST 12).
+              </div>
+            )}
+          </div>
+        )}
+        {/* DELETE TASK TEST LAB TAB */}
+        {activeTab === 'DELETE_TESTS' && (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between bg-workspace p-2 border border-border rounded-sm">
+              <div className="flex items-center gap-1.5">
+                <Network size={14} className="text-accent" />
+                <span className="font-bold">Delete Task Verification Test Suite</span>
+              </div>
+              <button
+                onClick={() => setDeleteTestSummary(runTaskDeleteTestSuite())}
+                className="flex items-center gap-1 px-2 py-1 bg-accent text-white rounded-sm hover:bg-opacity-90 transition-colors font-medium text-[10px]"
+              >
+                <Play size={11} />
+                Run Delete Suite
+              </button>
+            </div>
+
+            {deleteTestSummary ? (
+              <div className="flex flex-col gap-1.5">
+                <div className="flex justify-between items-center bg-app p-1.5 border border-border rounded-sm">
+                  <span className="font-mono text-[10px]">Passed: {deleteTestSummary.passCount} / {deleteTestSummary.totalTests}</span>
+                  <span className={`font-bold px-1.5 py-0.5 rounded-sm text-[9px] ${
+                    deleteTestSummary.failCount === 0 ? 'bg-success text-white' : 'bg-danger text-white'
+                  }`}>
+                    {deleteTestSummary.failCount === 0 ? 'ALL 9 TESTS PASSED' : `${deleteTestSummary.failCount} FAILED`}
+                  </span>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  {deleteTestSummary.results.map((res, idx) => (
+                    <div
+                      key={idx}
+                      className={`p-2 border rounded-sm flex flex-col gap-1 ${
+                        res.passed ? 'bg-emerald-50/50 border-emerald-300 text-emerald-900' : 'bg-rose-50/50 border-rose-300 text-rose-900'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 font-bold">
+                        {res.passed ? <CheckCircle2 size={13} className="text-emerald-600 flex-shrink-0" /> : <XCircle size={13} className="text-rose-600 flex-shrink-0" />}
+                        <span>{res.testName}</span>
+                      </div>
+                      <div className="text-[10px] text-muted font-mono leading-tight pl-4">{res.details}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center text-muted italic my-4 text-[10px]">
+                Click "Run Delete Suite" to verify pending task deletion, button state eligibility, rejection for CLAIMED/IN_PROGRESS/COMPLETED tasks, P2P memory cleanup, and independent deletion safety (TEST 1 - TEST 9).
+              </div>
+            )}
+          </div>
+        )}
+        {/* TASK CONSENSUS LAB TAB (PHASE 4D) */}
+        {activeTab === 'CONSENSUS_TESTS' && (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between bg-workspace p-2 border border-border rounded-sm">
+              <div className="flex items-center gap-1.5">
+                <Network size={14} className="text-accent" />
+                <span className="font-bold">Phase 4D Decentralized Consensus Test Suite</span>
+              </div>
+              <button
+                onClick={() => setConsensusTestSummary(runTaskConsensusTestSuite())}
+                className="flex items-center gap-1 px-2 py-1 bg-accent text-white rounded-sm hover:bg-opacity-90 transition-colors font-medium text-[10px]"
+              >
+                <Play size={11} />
+                Run Consensus Suite
+              </button>
+            </div>
+
+            {consensusTestSummary ? (
+              <div className="flex flex-col gap-1.5">
+                <div className="flex justify-between items-center bg-app p-1.5 border border-border rounded-sm">
+                  <span className="font-mono text-[10px]">Passed: {consensusTestSummary.passCount} / {consensusTestSummary.totalTests}</span>
+                  <span className={`font-bold px-1.5 py-0.5 rounded-sm text-[9px] ${
+                    consensusTestSummary.failCount === 0 ? 'bg-success text-white' : 'bg-danger text-white'
+                  }`}>
+                    {consensusTestSummary.failCount === 0 ? 'ALL 11 TESTS PASSED' : `${consensusTestSummary.failCount} FAILED`}
+                  </span>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  {consensusTestSummary.results.map((res, idx) => (
+                    <div
+                      key={idx}
+                      className={`p-2 border rounded-sm flex flex-col gap-1 ${
+                        res.passed ? 'bg-emerald-50/50 border-emerald-300 text-emerald-900' : 'bg-rose-50/50 border-rose-300 text-rose-900'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 font-bold">
+                        {res.passed ? <CheckCircle2 size={13} className="text-emerald-600 flex-shrink-0" /> : <XCircle size={13} className="text-rose-600 flex-shrink-0" />}
+                        <span>{res.testName}</span>
+                      </div>
+                      <div className="text-[10px] text-muted font-mono leading-tight pl-4">{res.details}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center text-muted italic my-4 text-[10px]">
+                Click "Run Consensus Suite" to verify deterministic candidate winner calculation, TASK_WINNER_PROPOSAL exchange, P2P consensus, TASK_CLAIMED broadcast, and A* execution transition (TEST 1 - TEST 11).
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TASK BID EXCHANGE LAB TAB (PHASE 4C) */}
+        {activeTab === 'BID_TESTS' && (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between bg-workspace p-2 border border-border rounded-sm">
+              <div className="flex items-center gap-1.5">
+                <Network size={14} className="text-accent" />
+                <span className="font-bold">Phase 4C Task Bid Exchange Test Suite</span>
+              </div>
+              <button
+                onClick={() => setBidTestSummary(runTaskBidExchangeTestSuite())}
+                className="flex items-center gap-1 px-2 py-1 bg-accent text-white rounded-sm hover:bg-opacity-90 transition-colors font-medium text-[10px]"
+              >
+                <Play size={11} />
+                Run Bid Suite
+              </button>
+            </div>
+
+            {bidTestSummary ? (
+              <div className="flex flex-col gap-1.5">
+                <div className="flex justify-between items-center bg-app p-1.5 border border-border rounded-sm">
+                  <span className="font-mono text-[10px]">Passed: {bidTestSummary.passCount} / {bidTestSummary.totalTests}</span>
+                  <span className={`font-bold px-1.5 py-0.5 rounded-sm text-[9px] ${
+                    bidTestSummary.failCount === 0 ? 'bg-success text-white' : 'bg-danger text-white'
+                  }`}>
+                    {bidTestSummary.failCount === 0 ? 'ALL 9 TESTS PASSED' : `${bidTestSummary.failCount} FAILED`}
+                  </span>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  {bidTestSummary.results.map((res, idx) => (
+                    <div
+                      key={idx}
+                      className={`p-2 border rounded-sm flex flex-col gap-1 ${
+                        res.passed ? 'bg-emerald-50/50 border-emerald-300 text-emerald-900' : 'bg-rose-50/50 border-rose-300 text-rose-900'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 font-bold">
+                        {res.passed ? <CheckCircle2 size={13} className="text-emerald-600 flex-shrink-0" /> : <XCircle size={13} className="text-rose-600 flex-shrink-0" />}
+                        <span>{res.testName}</span>
+                      </div>
+                      <div className="text-[10px] text-muted font-mono leading-tight pl-4">{res.details}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center text-muted italic my-4 text-[10px]">
+                Click "Run Bid Suite" to verify AMR bid generation, P2P TASK_BID exchange, local peer bid storage (peerBids), deduplication, and zero winner selection (TEST 1 - TEST 9).
+              </div>
+            )}
+          </div>
+        )}
+
         {/* TASK ANNOUNCEMENT LAB TAB (PHASE 4B) */}
         {activeTab === 'ANNOUNCE_TESTS' && (
           <div className="flex flex-col gap-2">

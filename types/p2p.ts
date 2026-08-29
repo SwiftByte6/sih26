@@ -13,6 +13,7 @@ export type P2PMessageType =
   // Reserved Future Message Types (Phase 2+)
   | 'TASK_ANNOUNCEMENT'
   | 'TASK_BID'
+  | 'TASK_WINNER_PROPOSAL'
   | 'TASK_CLAIMED'
   | 'TASK_RELEASED'
   | 'TASK_COMPLETED'
@@ -40,11 +41,36 @@ export interface PeerInfo {
   lastKnownTask?: string | null;
 }
 
+export interface PeerBidEntry {
+  robotId: string;
+  timestamp: number;
+  eligible: boolean;
+  suitabilityScore: number;
+  evaluation?: TaskEvaluationResult;
+}
+
+export interface WinnerProposalEntry {
+  robotId: string;
+  proposedWinnerId: string;
+  timestamp: number;
+}
+
 export interface LocalTaskKnowledge {
   task: Task;
   announcementTimestamp: number;
+  allocationRound?: number;
+  allocationState?: 'ANNOUNCED' | 'EVALUATING' | 'BIDDING' | 'PROPOSING' | 'CONSENSUS' | 'CLAIMED';
   evaluation?: TaskEvaluationResult;
+  myBidSent?: boolean;
+  myProposalSent?: boolean;
+  claimedBy?: string;
+  status?: 'PENDING' | 'PROPOSED' | 'CLAIMED';
+  peerBids: Record<string, PeerBidEntry>; // Keyed by peer's robotId (e.g. "AMR-02")
+  peerProposals?: Record<string, WinnerProposalEntry>; // Keyed by peer's robotId (e.g. "AMR-02")
 }
+
+
+
 
 export interface AmrAgentNodeStats {
   messagesSent: number;
