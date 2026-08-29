@@ -24,6 +24,7 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
       isOnline: true,
       lastHeartbeatSent: 0,
       peerList: {},
+      knownTasks: {},
       inbox: [],
       history: [],
       stats: {
@@ -66,54 +67,30 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
   }
 
   sendMessage(message: P2PMessage): boolean {
+    const isSystemSender = message.senderId === 'TASK_DISPATCH' || message.senderId === 'SYSTEM';
     const sender = this.nodes.get(message.senderId);
-    if (!sender || !sender.isOnline) {
+    if (!isSystemSender && (!sender || !sender.isOnline)) {
       return false; // Offline or unregistered sender cannot send messages
     }
 
-    sender.history.push(message);
-    sender.stats.messagesSent++;
-    if (message.type === 'HEARTBEAT') {
-      sender.stats.heartbeatsSent++;
-      sender.lastHeartbeatSent = message.timestamp;
+    if (sender) {
+      sender.history.push(message);
+      sender.stats.messagesSent++;
+      if (message.type === 'HEARTBEAT') {
+        sender.stats.heartbeatsSent++;
+        sender.lastHeartbeatSent = message.timestamp;
+      }
     }
 
-    if (message.receiverId === 'ALL') {
-      let deliveredCount = 0;
-      this.nodes.forEach((targetNode) => {
-        if (targetNode.robotId !== sender.robotId && targetNode.isOnline) {
-          targetNode.inbox.push(message);
-          targetNode.history.push(message);
-          targetNode.stats.messagesReceived++;
-          if (message.type === 'HEARTBEAT') {
-            targetNode.stats.heartbeatsReceived++;
-          }
-          // Peer discovery & peer state knowledge update
-          const prevPeer = targetNode.peerList[sender.robotId];
-          targetNode.peerList[sender.robotId] = {
-            robotId: sender.robotId,
-            nodeId: sender.nodeId,
-            status: 'ONLINE',
-            lastSeen: message.timestamp,
-            lastKnownPosition: message.payload?.position || prevPeer?.lastKnownPosition,
-            lastKnownState: message.payload?.status || prevPeer?.lastKnownState,
-            lastKnownBattery: message.payload?.battery || prevPeer?.lastKnownBattery,
-            lastKnownTask: message.payload?.task !== undefined ? message.payload?.task : prevPeer?.lastKnownTask,
-          };
-          deliveredCount++;
-        }
-      });
-      return deliveredCount > 0;
-    } else {
-      // Direct unicast message to specific receiver
-      const targetNode = this.nodes.get(message.receiverId);
-      if (targetNode && targetNode.isOnline) {
-        targetNode.inbox.push(message);
-        targetNode.history.push(message);
-        targetNode.stats.messagesReceived++;
-        if (message.type === 'HEARTBEAT') {
-          targetNode.stats.heartbeatsReceived++;
-        }
+    const handleTargetNodeReceive = (targetNode: AmrAgentNode) => {
+      targetNode.inbox.push(message);
+      targetNode.history.push(message);
+      targetNode.stats.messagesReceived++;
+      if (message.type === 'HEARTBEAT') {
+        targetNode.stats.heartbeatsReceived++;
+      }
+
+      if (sender) {
         // Peer discovery & peer state knowledge update
         const prevPeer = targetNode.peerList[sender.robotId];
         targetNode.peerList[sender.robotId] = {
@@ -126,12 +103,53 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
           lastKnownBattery: message.payload?.battery || prevPeer?.lastKnownBattery,
           lastKnownTask: message.payload?.task !== undefined ? message.payload?.task : prevPeer?.lastKnownTask,
         };
+      }
+
+      // Handle TASK_ANNOUNCEMENT: Store local task knowledge & trigger Phase 4A evaluation
+      if (message.type === 'TASK_ANNOUNCEMENT' && message.payload?.task) {
+        const task = message.payload.task;
+        targetNode.knownTasks = targetNode.knownTasks || {};
+        targetNode.knownTasks[task.task_id] = {
+          task,
+          announcementTimestamp: message.timestamp,
+        };
+
+        try {
+          const warehouseStore = require('../../store/warehouseStore').useWarehouseStore.getState();
+          const robotState = warehouseStore.robots.find((r: any) => r.id === targetNode.robotId);
+          if (robotState) {
+            const evaluateTask = require('../evaluation/TaskEvaluator').evaluateTask;
+            targetNode.knownTasks[task.task_id].evaluation = evaluateTask(
+              robotState,
+              task,
+              warehouseStore.pois,
+              warehouseStore.shelves
+            );
+          }
+        } catch (e) {}
+      }
+    };
+
+    if (message.receiverId === 'ALL') {
+      let deliveredCount = 0;
+      this.nodes.forEach((targetNode) => {
+        if ((!sender || targetNode.robotId !== sender.robotId) && targetNode.isOnline) {
+          handleTargetNodeReceive(targetNode);
+          deliveredCount++;
+        }
+      });
+      return deliveredCount > 0;
+    } else {
+      // Direct unicast message to specific receiver
+      const targetNode = this.nodes.get(message.receiverId);
+      if (targetNode && targetNode.isOnline) {
+        handleTargetNodeReceive(targetNode);
         return true;
       }
       return false; // Target node offline or not found
     }
-
   }
+
 
   sendDirectMessage(senderId: string, receiverId: string, type: P2PMessageType, payload?: any): boolean {
     const message: P2PMessage = {

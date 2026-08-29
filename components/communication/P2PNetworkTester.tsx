@@ -4,9 +4,14 @@ import React, { useState } from 'react';
 import { useP2PStore } from '../../store/p2pStore';
 import { Network, CheckCircle2, XCircle, Play, RefreshCw, Send, Radio, ShieldCheck, Wifi, WifiOff } from 'lucide-react';
 
+import { runTaskEvaluationTestSuite, EvaluationTestSummary } from '../../engine/evaluation/TaskEvaluator';
+import { runTaskAnnouncementTestSuite, AnnouncementTestSummary } from '../../engine/p2p/TaskAnnouncementTestSuite';
+
 export const P2PNetworkTester: React.FC = () => {
   const { nodes, testSummary, setRobotOnlineStatus, sendDirectMessage, broadcastMessage, runP2PTestSuite, resetP2PNetwork } = useP2PStore();
-  const [activeTab, setActiveTab] = useState<'TESTS' | 'NODES' | 'SEND'>('TESTS');
+  const [activeTab, setActiveTab] = useState<'TESTS' | 'EVAL_TESTS' | 'ANNOUNCE_TESTS' | 'NODES' | 'SEND'>('TESTS');
+  const [evalTestSummary, setEvalTestSummary] = useState<EvaluationTestSummary | null>(null);
+  const [announceTestSummary, setAnnounceTestSummary] = useState<AnnouncementTestSummary | null>(null);
 
   // Custom Message Form State
   const [senderId, setSenderId] = useState('AMR-01');
@@ -38,7 +43,23 @@ export const P2PNetworkTester: React.FC = () => {
             activeTab === 'TESTS' ? 'bg-panel text-accent border-b-2 border-b-accent' : 'text-muted hover:text-text'
           }`}
         >
-          TEST SUITE
+          P2P TESTS
+        </button>
+        <button
+          onClick={() => setActiveTab('EVAL_TESTS')}
+          className={`flex-1 py-1.5 px-2 font-semibold text-[10px] tracking-wide border-r border-border transition-colors ${
+            activeTab === 'EVAL_TESTS' ? 'bg-panel text-accent border-b-2 border-b-accent' : 'text-muted hover:text-text'
+          }`}
+        >
+          EVAL (4A)
+        </button>
+        <button
+          onClick={() => setActiveTab('ANNOUNCE_TESTS')}
+          className={`flex-1 py-1.5 px-2 font-semibold text-[10px] tracking-wide border-r border-border transition-colors ${
+            activeTab === 'ANNOUNCE_TESTS' ? 'bg-panel text-accent border-b-2 border-b-accent' : 'text-muted hover:text-text'
+          }`}
+        >
+          ANNOUNCE (4B)
         </button>
         <button
           onClick={() => setActiveTab('NODES')}
@@ -60,6 +81,112 @@ export const P2PNetworkTester: React.FC = () => {
 
       {/* Main Tab View Area */}
       <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-2">
+        {/* TASK ANNOUNCEMENT LAB TAB (PHASE 4B) */}
+        {activeTab === 'ANNOUNCE_TESTS' && (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between bg-workspace p-2 border border-border rounded-sm">
+              <div className="flex items-center gap-1.5">
+                <Network size={14} className="text-accent" />
+                <span className="font-bold">Phase 4B Task Announcement Test Suite</span>
+              </div>
+              <button
+                onClick={() => setAnnounceTestSummary(runTaskAnnouncementTestSuite())}
+                className="flex items-center gap-1 px-2 py-1 bg-accent text-white rounded-sm hover:bg-opacity-90 transition-colors font-medium text-[10px]"
+              >
+                <Play size={11} />
+                Run Announce Suite
+              </button>
+            </div>
+
+            {announceTestSummary ? (
+              <div className="flex flex-col gap-1.5">
+                <div className="flex justify-between items-center bg-app p-1.5 border border-border rounded-sm">
+                  <span className="font-mono text-[10px]">Passed: {announceTestSummary.passCount} / {announceTestSummary.totalTests}</span>
+                  <span className={`font-bold px-1.5 py-0.5 rounded-sm text-[9px] ${
+                    announceTestSummary.failCount === 0 ? 'bg-success text-white' : 'bg-danger text-white'
+                  }`}>
+                    {announceTestSummary.failCount === 0 ? 'ALL 8 TESTS PASSED' : `${announceTestSummary.failCount} FAILED`}
+                  </span>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  {announceTestSummary.results.map((res, idx) => (
+                    <div
+                      key={idx}
+                      className={`p-2 border rounded-sm flex flex-col gap-1 ${
+                        res.passed ? 'bg-emerald-50/50 border-emerald-300 text-emerald-900' : 'bg-rose-50/50 border-rose-300 text-rose-900'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 font-bold">
+                        {res.passed ? <CheckCircle2 size={13} className="text-emerald-600 flex-shrink-0" /> : <XCircle size={13} className="text-rose-600 flex-shrink-0" />}
+                        <span>{res.testName}</span>
+                      </div>
+                      <div className="text-[10px] text-muted font-mono leading-tight pl-4">{res.details}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center text-muted italic my-4 text-[10px]">
+                Click "Run Announce Suite" to verify task announcement broadcasts from TASK_DISPATCH, independent local task storage (knownTasks), automatic Phase 4A local evaluation, deduplication, and zero central winner selection (TEST 1 - TEST 8).
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TASK EVALUATION LAB TAB */}
+        {activeTab === 'EVAL_TESTS' && (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between bg-workspace p-2 border border-border rounded-sm">
+              <div className="flex items-center gap-1.5">
+                <Network size={14} className="text-accent" />
+                <span className="font-bold">Phase 4A Task Evaluation Test Suite</span>
+              </div>
+              <button
+                onClick={() => setEvalTestSummary(runTaskEvaluationTestSuite())}
+                className="flex items-center gap-1 px-2 py-1 bg-accent text-white rounded-sm hover:bg-opacity-90 transition-colors font-medium text-[10px]"
+              >
+                <Play size={11} />
+                Run Eval Suite
+              </button>
+            </div>
+
+            {evalTestSummary ? (
+              <div className="flex flex-col gap-1.5">
+                <div className="flex justify-between items-center bg-app p-1.5 border border-border rounded-sm">
+                  <span className="font-mono text-[10px]">Passed: {evalTestSummary.passCount} / {evalTestSummary.totalTests}</span>
+                  <span className={`font-bold px-1.5 py-0.5 rounded-sm text-[9px] ${
+                    evalTestSummary.failCount === 0 ? 'bg-success text-white' : 'bg-danger text-white'
+                  }`}>
+                    {evalTestSummary.failCount === 0 ? 'ALL 7 TESTS PASSED' : `${evalTestSummary.failCount} FAILED`}
+                  </span>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  {evalTestSummary.results.map((res, idx) => (
+                    <div
+                      key={idx}
+                      className={`p-2 border rounded-sm flex flex-col gap-1 ${
+                        res.passed ? 'bg-emerald-50/50 border-emerald-300 text-emerald-900' : 'bg-rose-50/50 border-rose-300 text-rose-900'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 font-bold">
+                        {res.passed ? <CheckCircle2 size={13} className="text-emerald-600 flex-shrink-0" /> : <XCircle size={13} className="text-rose-600 flex-shrink-0" />}
+                        <span>{res.testName}</span>
+                      </div>
+                      <div className="text-[10px] text-muted font-mono leading-tight pl-4">{res.details}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center text-muted italic my-4 text-[10px]">
+                Click "Run Eval Suite" to verify local task evaluation eligibility rules (payload capacity, capability levels, battery reserve, offline state) and independent multi-robot suitability scoring (TEST 1 - TEST 7).
+              </div>
+            )}
+          </div>
+        )}
+
         {/* TEST SUITE TAB */}
         {activeTab === 'TESTS' && (
           <div className="flex flex-col gap-2">

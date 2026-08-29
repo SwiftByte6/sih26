@@ -11,6 +11,8 @@ const MAX_MESSAGES = 200;
 let msgCounter = 0;
 let lastStatusBroadcastTime = 0;
 const STATUS_BROADCAST_INTERVAL_MS = 1000;
+const announcedTaskIds = new Set<string>();
+
 
 
 function createMsg(sender: string, receiver: string, message: string, category: CommunicationMessage['category'], priority: CommunicationMessage['priority'] = 'NORMAL'): CommunicationMessage {
@@ -126,6 +128,7 @@ export const useWarehouseStore = create<WarehouseState>((set) => ({
   })),
 
   addRobot: (robotData) => set((state) => {
+
     const newRobot: Robot = {
       id: robotData.id,
       label: robotData.label || robotData.id,
@@ -152,12 +155,27 @@ export const useWarehouseStore = create<WarehouseState>((set) => ({
     useP2PStore.getState().network.registerNode(newRobot.id);
     useP2PStore.getState().processHeartbeats();
 
+    // Broadcast currently pending tasks to the newly added robot
+    const pendingTasks = useTaskStore.getState().getPendingTasks();
+    pendingTasks.forEach((t) => {
+      useP2PStore.getState().sendDirectMessage('TASK_DISPATCH', newRobot.id, 'TASK_ANNOUNCEMENT', {
+        taskId: t.task_id,
+        task: t,
+        pickupPoint: t.pickup_point,
+        dropPoint: t.drop_point,
+        weight: t.weight,
+        priority: t.priority,
+        body: `TASK_ANNOUNCEMENT: ${t.task_id} [${t.task_type}] Pickup: ${t.pickup_point} -> Drop: ${t.drop_point} (Weight: ${t.weight}kg)`,
+      });
+    });
+
     return {
       robots: [...state.robots, newRobot],
       selectedItemId: newRobot.id,
       selectedItemType: 'ROBOT'
     };
   }),
+
 
   updateRobot: (id, updates) => set((state) => ({
     robots: state.robots.map(r => r.id === id ? { ...r, ...updates } : r)
@@ -215,8 +233,29 @@ export const useWarehouseStore = create<WarehouseState>((set) => ({
     }
 
     const taskStore = useTaskStore.getState();
+    const pendingTasks = taskStore.getPendingTasks();
+
+    // Broadcast TASK_ANNOUNCEMENT for newly available pending tasks
+    pendingTasks.forEach((t) => {
+      if (!announcedTaskIds.has(t.task_id)) {
+        announcedTaskIds.add(t.task_id);
+        p2pStore.broadcastMessage('TASK_DISPATCH', 'TASK_ANNOUNCEMENT', {
+          taskId: t.task_id,
+          task: t,
+          pickupPoint: t.pickup_point,
+          dropPoint: t.drop_point,
+          weight: t.weight,
+          priority: t.priority,
+          requiredCapability: t.requiredCapability,
+          requiredSensingRadius: t.requiredSensingRadius,
+          body: `TASK_ANNOUNCEMENT: ${t.task_id} [${t.task_type}] Pickup: ${t.pickup_point} -> Drop: ${t.drop_point} (Weight: ${t.weight}kg)`,
+        });
+      }
+    });
+
     const newMessages: CommunicationMessage[] = [];
     const newLinks: ActiveCommLink[] = [];
+
 
     
     // Expire old visual links

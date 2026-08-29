@@ -31,7 +31,10 @@ export interface Task {
   failed_time: string | null;
   reassigned_count: number;
   failure_reason: string | null;
+  requiredCapability?: string;
+  requiredSensingRadius?: number;
 }
+
 
 export type TaskEventType =
   | 'TASK_CREATED'

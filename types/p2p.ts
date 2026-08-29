@@ -1,3 +1,6 @@
+import { TaskEvaluationResult } from './evaluation';
+import { Task } from './task';
+
 export type P2PMessageType =
   // Phase 1 Foundation Message Types
   | 'HEARTBEAT'
@@ -20,7 +23,7 @@ export type PeerNodeStatus = 'ONLINE' | 'OFFLINE';
 export interface P2PMessage {
   id: string;
   timestamp: number;
-  senderId: string;       // e.g. "AMR-01"
+  senderId: string;       // e.g. "AMR-01" or "TASK_DISPATCH"
   receiverId: string | 'ALL';
   type: P2PMessageType;
   payload?: any;
@@ -37,6 +40,11 @@ export interface PeerInfo {
   lastKnownTask?: string | null;
 }
 
+export interface LocalTaskKnowledge {
+  task: Task;
+  announcementTimestamp: number;
+  evaluation?: TaskEvaluationResult;
+}
 
 export interface AmrAgentNodeStats {
   messagesSent: number;
@@ -51,7 +59,9 @@ export interface AmrAgentNode {
   isOnline: boolean;
   lastHeartbeatSent: number;
   peerList: Record<string, PeerInfo>; // Keyed by peer's robotId
+  knownTasks: Record<string, LocalTaskKnowledge>; // Keyed by taskId
   inbox: P2PMessage[];
   history: P2PMessage[];
   stats: AmrAgentNodeStats;
 }
+
