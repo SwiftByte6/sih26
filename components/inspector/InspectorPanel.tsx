@@ -60,8 +60,8 @@ export const InspectorPanel: React.FC = () => {
             <div>
               <div className="text-[10px] text-muted font-semibold mb-1">Position</div>
               <div className="font-mono grid grid-cols-2 gap-2">
-                <div className="bg-workspace p-1.5 border border-border rounded-sm">X: {selectedRobot.x.toFixed(1)}</div>
-                <div className="bg-workspace p-1.5 border border-border rounded-sm">Y: {selectedRobot.y.toFixed(1)}</div>
+                <div className="bg-workspace p-1.5 border border-border rounded-sm">Col: {selectedRobot.col}</div>
+                <div className="bg-workspace p-1.5 border border-border rounded-sm">Row: {selectedRobot.row}</div>
               </div>
             </div>
           </div>
@@ -78,8 +78,8 @@ export const InspectorPanel: React.FC = () => {
             <div>
               <div className="text-[10px] text-muted font-semibold mb-1">Position</div>
               <div className="font-mono grid grid-cols-2 gap-2">
-                <div className="bg-workspace p-1.5 border border-border rounded-sm">X: {selectedObstacle.x}</div>
-                <div className="bg-workspace p-1.5 border border-border rounded-sm">Y: {selectedObstacle.y}</div>
+                <div className="bg-workspace p-1.5 border border-border rounded-sm">Col: {selectedObstacle.col}</div>
+                <div className="bg-workspace p-1.5 border border-border rounded-sm">Row: {selectedObstacle.row}</div>
               </div>
             </div>
 

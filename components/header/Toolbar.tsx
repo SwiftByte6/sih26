@@ -27,6 +27,8 @@ const TOOLBAR_GROUPS = [
 export const Toolbar: React.FC = () => {
   const toggleSimulation = useWarehouseStore(state => state.toggleSimulation);
   const isRunning = useWarehouseStore(state => state.isRunning);
+  const toggleGrid = useWarehouseStore(state => state.toggleGrid);
+  const showGrid = useWarehouseStore(state => state.showGrid);
   const [showImport, setShowImport] = useState(false);
   const [showReconstruction, setShowReconstruction] = useState(false);
 
@@ -80,6 +82,8 @@ export const Toolbar: React.FC = () => {
           await writeTextFile(file, JSON.stringify({ demo: "data" }));
           console.log("Saved");
         }
+      } else if (label === 'Grid') {
+        toggleGrid();
       }
     } catch (e) {
       console.log("Native API failed (fallback or not in Tauri):", e);
@@ -95,7 +99,11 @@ export const Toolbar: React.FC = () => {
               {group.map((tool) => (
                 <button
                   key={tool.label}
-                  className="flex items-center justify-center p-1.5 hover:bg-app rounded-sm text-muted hover:text-text"
+                  className={`flex items-center justify-center p-1.5 hover:bg-app rounded-sm transition-colors ${
+                    tool.label === 'Grid' && showGrid 
+                      ? 'bg-app text-accent' 
+                      : 'text-muted hover:text-text'
+                  }`}
                   title={tool.label}
                   onClick={() => handleToolbarClick(tool.label)}
                 >
