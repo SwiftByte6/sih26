@@ -65,7 +65,19 @@ export function determineCandidateWinner(
 
   if (candidateBids.length === 0) return null;
 
-  candidateBids.sort((a, b) => {
+  // Deduplicate bids by robotId (keep highest suitabilityScore per robot)
+  const uniqueMap = new Map<string, CandidateBid>();
+  candidateBids.forEach((bid) => {
+    const existing = uniqueMap.get(bid.robotId);
+    if (!existing || bid.suitabilityScore > existing.suitabilityScore) {
+      uniqueMap.set(bid.robotId, bid);
+    }
+  });
+
+  const uniqueBids = Array.from(uniqueMap.values());
+  if (uniqueBids.length === 0) return null;
+
+  uniqueBids.sort((a, b) => {
     // 1. Higher suitability score
     if (b.suitabilityScore !== a.suitabilityScore) {
       return b.suitabilityScore - a.suitabilityScore;
@@ -86,12 +98,21 @@ export function determineCandidateWinner(
     return a.robotId.localeCompare(b.robotId);
   });
 
-  return candidateBids[0].robotId;
+  return uniqueBids[0].robotId;
 }
 
 /**
  * Resolves grid coordinates for a location string (e.g. "PICKUP A", "Storage-01", "S5")
  */
+
+export function normalizeLocString(str: string): string {
+  if (!str) return '';
+  return str
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/[^a-z0-9\s\-]/gi, '');
+}
 
 const LOCATION_ALIAS_MAP: Record<string, string> = {
   'pickup a': 'POI1',
@@ -114,32 +135,43 @@ export function resolveLocationCoordinates(
   shelves: Shelf[]
 ): { col: number; row: number; label: string } | null {
   if (!locString) return null;
-  const norm = locString.toLowerCase().trim();
+  const rawNorm = locString.toLowerCase().trim();
+  const norm = normalizeLocString(locString);
 
   // 1. Exact POI ID match
-  const poiById = pois.find((p) => p.id.toLowerCase().trim() === norm);
+  const poiById = pois.find((p) => normalizeLocString(p.id) === norm || p.id.toLowerCase().trim() === rawNorm);
   if (poiById) return { col: poiById.col, row: poiById.row, label: poiById.label };
 
   // 2. Exact normalized POI label match
-  const poiByLabel = pois.find((p) => p.label.toLowerCase().trim() === norm);
+  const poiByLabel = pois.find(
+    (p) => normalizeLocString(p.label) === norm || p.label.toLowerCase().trim() === rawNorm
+  );
   if (poiByLabel) return { col: poiByLabel.col, row: poiByLabel.row, label: poiByLabel.label };
 
   // 3. Exact normalized task alias match
-  const aliasTargetId = LOCATION_ALIAS_MAP[norm];
+  const aliasTargetId = LOCATION_ALIAS_MAP[norm] || LOCATION_ALIAS_MAP[rawNorm];
   if (aliasTargetId) {
-    const aliasedPoi = pois.find((p) => p.id.toLowerCase().trim() === aliasTargetId.toLowerCase().trim());
+    const targetNorm = normalizeLocString(aliasTargetId);
+    const aliasedPoi = pois.find(
+      (p) => normalizeLocString(p.id) === targetNorm || p.id.toLowerCase().trim() === aliasTargetId.toLowerCase().trim()
+    );
     if (aliasedPoi) return { col: aliasedPoi.col, row: aliasedPoi.row, label: aliasedPoi.label };
-    const aliasedShelf = shelves.find((s) => s.id.toLowerCase().trim() === aliasTargetId.toLowerCase().trim());
+
+    const aliasedShelf = shelves.find(
+      (s) => normalizeLocString(s.id) === targetNorm || s.id.toLowerCase().trim() === aliasTargetId.toLowerCase().trim()
+    );
     if (aliasedShelf) return { col: aliasedShelf.col, row: aliasedShelf.row - 1, label: aliasedShelf.id };
   }
 
   // 4. Exact shelf ID match
-  const shelfById = shelves.find((s) => s.id.toLowerCase().trim() === norm);
+  const shelfById = shelves.find((s) => normalizeLocString(s.id) === norm || s.id.toLowerCase().trim() === rawNorm);
   if (shelfById) return { col: shelfById.col, row: shelfById.row - 1, label: shelfById.id };
 
   // 5. Exact normalized shelf label match
   const shelfByLabel = shelves.find(
-    (s) => s.id.toLowerCase().trim() === `shelf ${norm}` || s.id.toLowerCase().trim() === `shelf-${norm}`
+    (s) =>
+      normalizeLocString(s.id) === normalizeLocString(`shelf ${norm}`) ||
+      normalizeLocString(s.id) === normalizeLocString(`shelf-${norm}`)
   );
   if (shelfByLabel) return { col: shelfByLabel.col, row: shelfByLabel.row - 1, label: shelfByLabel.id };
 

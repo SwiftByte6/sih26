@@ -39,7 +39,7 @@ export type PointOfInterest = {
   label: string;
 };
 
-export type RobotState = 'IDLE' | 'MOVING' | 'CHARGING' | 'ERROR' | 'WAITING';
+export type RobotState = 'IDLE' | 'MOVING' | 'CHARGING' | 'ERROR' | 'WAITING' | 'WAITING_FOR_PATH_CLEARANCE';
 
 export type Robot = {
   id: string;

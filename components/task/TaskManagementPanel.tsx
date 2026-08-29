@@ -341,8 +341,27 @@ export const TaskManagementPanel: React.FC = () => {
                           )}
                         </div>
                       </td>
-                      <td className="p-3 border-r border-border font-mono">{t.weight} kg</td>
-                      <td className="p-3 border-r border-border">{renderStatusBadge(t.status)}</td>
+                      <td className="p-3 border-r border-border">
+                        {renderStatusBadge(t.status)}
+                        {t.status === 'FAILED' && t.failure_reason && (
+                          <div className="mt-1.5 p-1.5 bg-rose-100 border border-rose-300 text-rose-950 rounded text-[10px] font-mono leading-tight max-w-[280px]">
+                            <span className="font-bold uppercase tracking-wider text-[9px] text-rose-900 block mb-0.5">⚠️ Failure Reason:</span>
+                            {t.failure_reason}
+                          </div>
+                        )}
+                        {t.status === 'PENDING' && t.ineligibilityAudit && Object.keys(t.ineligibilityAudit).length > 0 && (
+                          <div className="mt-1.5 p-1.5 bg-rose-50 border border-rose-200 text-rose-900 rounded text-[10px] font-mono flex flex-col gap-0.5 max-w-[280px]">
+                            <div className="font-bold text-[9px] uppercase tracking-wider text-rose-800 flex items-center gap-1">
+                              <span>⚠️ Fleet Non-Bidding Reasons:</span>
+                            </div>
+                            {Object.entries(t.ineligibilityAudit).map(([rId, reasons]) => (
+                              <div key={rId} className="leading-tight text-[9.5px]">
+                                <span className="font-bold text-rose-950">{rId}:</span> {reasons.join(', ')}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </td>
                       <td className="p-3 font-semibold font-mono border-r border-border">
                         {t.assigned_robot_id ? (
                           <span className="px-2 py-0.5 rounded bg-app border border-border text-text flex items-center gap-1 w-fit">

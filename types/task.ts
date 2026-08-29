@@ -33,6 +33,7 @@ export interface Task {
   failure_reason: string | null;
   requiredCapability?: string;
   requiredSensingRadius?: number;
+  ineligibilityAudit?: Record<string, string[]>;
 }
 
 

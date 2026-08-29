@@ -377,6 +377,7 @@ interface TaskState {
   updateTask: (taskId: string, updates: Partial<Task>) => void;
   deleteTask: (taskId: string) => { success: boolean; error?: string };
   updatePriority: (taskId: string, priority: TaskPriority) => void;
+  updateTaskIneligibilityAudit: (taskId: string, robotId: string, reasons: string[]) => void;
 
   // Queries
   getTask: (taskId: string) => Task | undefined;
@@ -528,8 +529,32 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     set((state) => ({
       tasks: state.tasks.map((t) => (t.task_id === taskId ? { ...t, priority } : t)),
     }));
+    try {
+      const warehouseStore = require('./warehouseStore').useWarehouseStore.getState();
+      if (warehouseStore && warehouseStore.removeAnnouncedTaskId) {
+        warehouseStore.removeAnnouncedTaskId(taskId);
+      }
+    } catch (e) {}
     const task = get().getTask(taskId);
     if (task) notifyListeners('TASK_PRIORITY_CHANGED', task);
+  },
+
+  updateTaskIneligibilityAudit: (taskId, robotId, reasons) => {
+    set((state) => ({
+      tasks: state.tasks.map((t) => {
+        if (t.task_id === taskId) {
+          const audit = t.ineligibilityAudit || {};
+          return {
+            ...t,
+            ineligibilityAudit: {
+              ...audit,
+              [robotId]: reasons,
+            },
+          };
+        }
+        return t;
+      }),
+    }));
   },
 
   getTask: (taskId) => get().tasks.find((t) => t.task_id === taskId),

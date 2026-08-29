@@ -59,9 +59,10 @@ export const RobotMonitoringSubTab: React.FC = () => {
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
                         robot.state === 'MOVING' ? 'bg-accent text-white' :
                         robot.state === 'WAITING' ? 'bg-warning text-white' :
+                        robot.state === 'WAITING_FOR_PATH_CLEARANCE' ? 'bg-amber-600 text-white font-mono' :
                         robot.state === 'CHARGING' ? 'bg-success text-white' : 'bg-muted text-white'
                       }`}>
-                        {robot.state}
+                        {robot.state === 'WAITING_FOR_PATH_CLEARANCE' ? 'PATH BLOCKED (YIELDING)' : robot.state}
                       </span>
                     </td>
 

@@ -11,10 +11,11 @@ import { runTaskConsensusTestSuite, ConsensusTestSummary } from '../../engine/p2
 import { runTaskDeleteTestSuite, DeleteTestSummary } from '../../engine/p2p/TaskDeleteTestSuite';
 import { runStatusThrottleTestSuite, StatusThrottleTestSummary } from '../../engine/p2p/StatusThrottleTestSuite';
 import { runDecentralizedAllocationEndToEndTestSuite, E2ETestSummary } from '../../engine/p2p/DecentralizedAllocationEndToEndTestSuite';
+import { runCollisionAvoidanceTestSuite, CollisionTestSummary } from '../../engine/coordination/CollisionAvoidanceTestSuite';
 
 export const P2PNetworkTester: React.FC = () => {
   const { nodes, testSummary, setRobotOnlineStatus, sendDirectMessage, broadcastMessage, runP2PTestSuite, resetP2PNetwork } = useP2PStore();
-  const [activeTab, setActiveTab] = useState<'TESTS' | 'EVAL_TESTS' | 'ANNOUNCE_TESTS' | 'BID_TESTS' | 'CONSENSUS_TESTS' | 'DELETE_TESTS' | 'THROTTLE_TESTS' | 'E2E_TESTS' | 'NODES' | 'SEND'>('TESTS');
+  const [activeTab, setActiveTab] = useState<'TESTS' | 'EVAL_TESTS' | 'ANNOUNCE_TESTS' | 'BID_TESTS' | 'CONSENSUS_TESTS' | 'DELETE_TESTS' | 'THROTTLE_TESTS' | 'E2E_TESTS' | 'COLLISION_TESTS' | 'NODES' | 'SEND'>('TESTS');
   const [evalTestSummary, setEvalTestSummary] = useState<EvaluationTestSummary | null>(null);
   const [announceTestSummary, setAnnounceTestSummary] = useState<AnnouncementTestSummary | null>(null);
   const [bidTestSummary, setBidTestSummary] = useState<BidExchangeTestSummary | null>(null);
@@ -22,6 +23,7 @@ export const P2PNetworkTester: React.FC = () => {
   const [deleteTestSummary, setDeleteTestSummary] = useState<DeleteTestSummary | null>(null);
   const [throttleTestSummary, setThrottleTestSummary] = useState<StatusThrottleTestSummary | null>(null);
   const [e2eTestSummary, setE2eTestSummary] = useState<E2ETestSummary | null>(null);
+  const [collisionTestSummary, setCollisionTestSummary] = useState<CollisionTestSummary | null>(null);
 
   // Custom Message Form State
   const [senderId, setSenderId] = useState('AMR-01');
@@ -112,6 +114,14 @@ export const P2PNetworkTester: React.FC = () => {
           END-TO-END (E2E)
         </button>
         <button
+          onClick={() => setActiveTab('COLLISION_TESTS')}
+          className={`flex-1 py-1.5 px-2 font-semibold text-[10px] tracking-wide border-r border-border transition-colors ${
+            activeTab === 'COLLISION_TESTS' ? 'bg-panel text-accent border-b-2 border-b-accent' : 'text-muted hover:text-text'
+          }`}
+        >
+          COLLISION (5A)
+        </button>
+        <button
           onClick={() => setActiveTab('NODES')}
           className={`flex-1 py-1.5 px-2 font-semibold text-[10px] tracking-wide border-r border-border transition-colors ${
             activeTab === 'NODES' ? 'bg-panel text-accent border-b-2 border-b-accent' : 'text-muted hover:text-text'
@@ -131,6 +141,58 @@ export const P2PNetworkTester: React.FC = () => {
 
       {/* Main Tab View Area */}
       <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-2">
+        {/* COLLISION AVOIDANCE TEST LAB TAB */}
+        {activeTab === 'COLLISION_TESTS' && (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between bg-workspace p-2 border border-border rounded-sm">
+              <div className="flex items-center gap-1.5">
+                <ShieldCheck size={14} className="text-accent" />
+                <span className="font-bold">Collision Avoidance & Deadlock Prevention Test Suite</span>
+              </div>
+              <button
+                onClick={() => setCollisionTestSummary(runCollisionAvoidanceTestSuite())}
+                className="flex items-center gap-1 px-2 py-1 bg-accent text-white rounded-sm hover:bg-opacity-90 transition-colors font-medium text-[10px]"
+              >
+                <Play size={11} />
+                Run Collision Suite
+              </button>
+            </div>
+
+            {collisionTestSummary ? (
+              <div className="flex flex-col gap-1.5">
+                <div className="flex justify-between items-center bg-app p-1.5 border border-border rounded-sm">
+                  <span className="font-mono text-[10px]">Passed: {collisionTestSummary.passCount} / {collisionTestSummary.totalTests}</span>
+                  <span className={`font-bold px-1.5 py-0.5 rounded-sm text-[9px] ${
+                    collisionTestSummary.failCount === 0 ? 'bg-success text-white' : 'bg-danger text-white'
+                  }`}>
+                    {collisionTestSummary.failCount === 0 ? 'ALL 10 TESTS PASSED' : `${collisionTestSummary.failCount} FAILED`}
+                  </span>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  {collisionTestSummary.results.map((res, idx) => (
+                    <div
+                      key={idx}
+                      className={`p-2 border rounded-sm flex flex-col gap-1 ${
+                        res.passed ? 'bg-emerald-50/50 border-emerald-300 text-emerald-900' : 'bg-rose-50/50 border-rose-300 text-rose-900'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 font-bold">
+                        {res.passed ? <CheckCircle2 size={13} className="text-emerald-600 flex-shrink-0" /> : <XCircle size={13} className="text-rose-600 flex-shrink-0" />}
+                        <span>{res.testName}</span>
+                      </div>
+                      <div className="text-[10px] text-muted font-mono leading-tight pl-4">{res.details}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center text-muted italic my-4 text-[10px]">
+                Click "Run Collision Suite" to verify deterministic priority resolution, WAITING_FOR_PATH_CLEARANCE, head-on swap prevention, 3+ robot contention, and deadlock resolution (&gt;15 ticks) (TEST 1 - TEST 10).
+              </div>
+            )}
+          </div>
+        )}
         {/* END-TO-END DECENTRALIZED ALLOCATION TEST LAB TAB */}
         {activeTab === 'E2E_TESTS' && (
           <div className="flex flex-col gap-2">
