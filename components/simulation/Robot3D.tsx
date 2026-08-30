@@ -141,7 +141,7 @@ export const Robot3D: React.FC<Props> = ({ robot, cellSize, onOrbitLock }) => {
   }
 
   return (
-    <group ref={groupRef} position={[target.x, robot.posY ?? 0, target.z]}>
+    <group ref={groupRef} position={[target.x, robot.posY ?? 0, target.z]} scale={[robot.scale?.x ?? 1, robot.scale?.y ?? 1, robot.scale?.z ?? 1]}>
       {visuals}
     </group>
   );

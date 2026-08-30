@@ -154,6 +154,7 @@ interface WarehouseState {
   viewMode: ViewMode;
   transformMode: TransformMode;
   pendingPlaceType: PlaceableType | null;
+  pendingAssetUrl: string | null;
   simSpeed: number;
   showSensors: boolean;
   validationIssues: LayoutValidationIssue[];
@@ -171,7 +172,7 @@ interface WarehouseState {
   setViewMode: (mode: ViewMode) => void;
   setAppMode: (mode: AppMode) => void;
   setTransformMode: (mode: TransformMode) => void;
-  setPendingPlaceType: (type: PlaceableType | null) => void;
+  setPendingPlaceType: (type: PlaceableType | null, assetUrl?: string | null) => void;
   setSimSpeed: (speed: number) => void;
   toggleSensors: () => void;
   setGridSnap: (snap: number) => void;
@@ -198,11 +199,14 @@ interface WarehouseState {
   updatePallet: (id: string, updates: Partial<Pallet>) => void;
   removePallet: (id: string) => void;
 
-  placeAtCell: (type: PlaceableType, row: number, col: number) => void;
+  placeAtCell: (type: PlaceableType, row: number, col: number, assetUrl?: string | null) => void;
   moveSelectedToCell: (row: number, col: number) => void;
   deleteSelected: () => void;
+  duplicateSelected: () => void;
   validateCurrentLayout: () => LayoutValidationIssue[];
   applyLayout: () => { ok: boolean; issues: LayoutValidationIssue[] };
+  getSnapshot: () => LayoutSnapshot;
+  loadLayout: (snap: LayoutSnapshot) => void;
 
   addCommunication: (msg: CommunicationMessage) => void;
   clearCommunications: () => void;
@@ -224,7 +228,8 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
   viewMode: '2D',
   appMode: 'BUILDER',
   transformMode: 'translate',
-  pendingPlaceType: null,
+  pendingPlaceType: null, pendingAssetUrl: null,
+  pendingAssetUrl: null,
   simSpeed: 1,
   showSensors: false,
   validationIssues: [],
@@ -254,7 +259,7 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
 
   setViewMode: (mode) => set({ viewMode: mode }),
   setTransformMode: (mode) => set({ transformMode: mode }),
-  setPendingPlaceType: (type) => set({ pendingPlaceType: type }),
+  setPendingPlaceType: (type, assetUrl) => set({ pendingPlaceType: type, pendingAssetUrl: assetUrl ?? null }),
   setSimSpeed: (speed) => set({ simSpeed: Math.max(0.25, Math.min(4, speed)) }),
   toggleSensors: () => set((state) => ({ showSensors: !state.showSensors })),
   setGridSnap: (snap) => set({ gridSnap: Math.max(1, Math.round(snap)) }),
@@ -264,27 +269,39 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
       set({
         appMode: 'BUILDER',
         isRunning: false,
-        pendingPlaceType: null,
+        pendingPlaceType: null, pendingAssetUrl: null,
       });
       return;
     }
     const result = get().applyLayout();
     if (result.ok) {
-      set({ appMode: 'PLAY', pendingPlaceType: null, selectedItemId: null, selectedItemType: null });
+      set({ appMode: 'PLAY', pendingPlaceType: null, pendingAssetUrl: null, selectedItemId: null, selectedItemType: null });
+    } else {
+      if (typeof window !== 'undefined') {
+        alert('Cannot switch to PLAY mode. Layout has errors:\n' + result.issues.filter(i=>i.severity==='error').map(i=>'- ' + i.message).join('\n'));
+      }
     }
   },
 
-  setSelectedItem: (id, type) => set({ selectedItemId: id, selectedItemType: type, pendingPlaceType: null }),
+  setSelectedItem: (id, type) => set({ selectedItemId: id, selectedItemType: type, pendingPlaceType: null, pendingAssetUrl: null }),
   toggleSimulation: () => {
-    const { appMode, isRunning } = get();
-    if (appMode !== 'PLAY') return;
-    set({ isRunning: !isRunning });
+    const { isRunning } = get();
+    if (isRunning) {
+      get().pauseSimulation();
+    } else {
+      get().startSimulation();
+    }
   },
   startSimulation: () => {
     if (get().appMode !== 'PLAY') {
       const result = get().applyLayout();
-      if (!result.ok) return;
-      set({ appMode: 'PLAY', isRunning: true, pendingPlaceType: null });
+      if (!result.ok) {
+        if (typeof window !== 'undefined') {
+          alert('Cannot run simulation. Layout has errors:\n' + result.issues.filter(i=>i.severity==='error').map(i=>'- ' + i.message).join('\n'));
+        }
+        return;
+      }
+      set({ appMode: 'PLAY', isRunning: true, pendingPlaceType: null, pendingAssetUrl: null });
       return;
     }
     set({ isRunning: true });
@@ -479,13 +496,13 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
     selectedItemType: state.selectedItemId === id ? null : state.selectedItemType,
   })),
 
-  placeAtCell: (type, row, col) => {
+  placeAtCell: (type, row, col, assetUrl) => {
     const state = get();
     const w = type === 'SHELF' ? 6 : type === 'OBSTACLE' ? 2 : 1;
     const h = type === 'SHELF' ? 2 : type === 'OBSTACLE' ? 2 : 1;
     const pos = clampMove(row, col, w, h, state);
     if (type === 'SHELF') get().addShelf({ ...pos, width: 6, height: 2 });
-    else if (type === 'OBSTACLE') get().addObstacle({ ...pos, width: 2, height: 2 });
+    else if (type === 'OBSTACLE') get().addObstacle({ ...pos, width: 2, height: 2, assetUrl: assetUrl || state.pendingAssetUrl || undefined });
     else if (type === 'PALLET') get().addPallet({ ...DEFAULT_TRANSFORM, ...pos, width: 1, height: 1 });
     else if (type === 'ROBOT') {
       get().addRobot({
@@ -506,7 +523,7 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
       const label = type === 'PICKUP' ? `PICKUP ${n}` : type === 'DROP' ? `DROP ${n}` : `CHARGER ${n}`;
       get().addPoi({ ...DEFAULT_TRANSFORM, ...pos, type, label });
     }
-    set({ pendingPlaceType: null });
+    set({ pendingPlaceType: null, pendingAssetUrl: null });
   },
 
   moveSelectedToCell: (row, col) => {
@@ -528,6 +545,49 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
     else if (selectedItemType === 'PALLET') get().removePallet(selectedItemId);
     else if (selectedItemType === 'POI') get().removePoi(selectedItemId);
     else if (selectedItemType === 'ROBOT') get().removeRobot(selectedItemId);
+  },
+
+  duplicateSelected: () => {
+    const state = get();
+    const id = state.selectedItemId;
+    const type = state.selectedItemType;
+    if (!id || !type) return;
+    if (type === 'SHELF') {
+      const src = state.shelves.find(s => s.id === id);
+      if (src) {
+        state.placeAtCell('SHELF', src.row + 1, src.col);
+        const nextId = get().shelves[get().shelves.length - 1].id;
+        get().updateShelf(nextId, { rotX: src.rotX, rotY: src.rotY, rotZ: src.rotZ, scale: src.scale, posY: src.posY });
+      }
+    } else if (type === 'OBSTACLE') {
+      const src = state.obstacles.find(s => s.id === id);
+      if (src) {
+        state.placeAtCell('OBSTACLE', src.row + 1, src.col, src.assetUrl);
+        const nextId = get().obstacles[get().obstacles.length - 1].id;
+        get().updateObstacle(nextId, { rotX: src.rotX, rotY: src.rotY, rotZ: src.rotZ, scale: src.scale, posY: src.posY });
+      }
+    } else if (type === 'PALLET') {
+      const src = state.pallets.find(s => s.id === id);
+      if (src) {
+        state.placeAtCell('PALLET', src.row + 1, src.col);
+        const nextId = get().pallets[get().pallets.length - 1].id;
+        get().updatePallet(nextId, { rotX: src.rotX, rotY: src.rotY, rotZ: src.rotZ, scale: src.scale, posY: src.posY });
+      }
+    } else if (type === 'ROBOT') {
+      const src = state.robots.find(s => s.id === id);
+      if (src) {
+        state.placeAtCell('ROBOT', src.row + 1, src.col);
+        const nextId = get().robots[get().robots.length - 1].id;
+        get().updateRobot(nextId, { rotX: src.rotX, rotY: src.rotY, rotZ: src.rotZ, scale: src.scale, posY: src.posY });
+      }
+    } else if (type === 'POI') {
+      const src = state.pois.find(s => s.id === id);
+      if (src) {
+        state.placeAtCell(src.type, src.row + 1, src.col);
+        const nextId = get().pois[get().pois.length - 1].id;
+        get().updatePoi(nextId, { rotX: src.rotX, rotY: src.rotY, rotZ: src.rotZ, scale: src.scale, posY: src.posY });
+      }
+    }
   },
 
   validateCurrentLayout: () => {
@@ -562,10 +622,38 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
       activeCommLinks: [],
       validationIssues: issues,
       appMode: 'PLAY',
-      pendingPlaceType: null,
+      pendingPlaceType: null, pendingAssetUrl: null,
     });
     useTaskStore.getState().clearTasks();
     return { ok: true, issues };
+  },
+
+  getSnapshot: () => {
+    return snapshotFrom(get());
+  },
+
+  loadLayout: (snap) => {
+    persistLayout(snap);
+    const cloned = cloneLayout(snap);
+    set({
+      savedLayout: snap,
+      gridRows: cloned.gridRows,
+      gridCols: cloned.gridCols,
+      walls: cloned.walls,
+      shelves: cloned.shelves,
+      obstacles: cloned.obstacles,
+      pois: cloned.pois,
+      pallets: cloned.pallets,
+      robots: robotsForPlay(cloned.robots),
+      intersections: cloned.intersections || [],
+      paths: cloned.paths || [],
+      selectedItemId: null,
+      selectedItemType: null,
+      validationIssues: [],
+      isRunning: false,
+      appMode: 'BUILDER'
+    });
+    useTaskStore.getState().clearTasks();
   },
 
   addCommunication: (msg) => set((state) => {

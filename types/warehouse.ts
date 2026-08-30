@@ -66,6 +66,7 @@ export type Shelf = GridOccupant &
 export type Obstacle = GridOccupant &
   Partial<ObjectTransform> & {
     id: string;
+    assetUrl?: string;
   };
 
 export type Intersection = {

@@ -1,132 +1,19 @@
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import {
-  Task,
-  TaskPriority,
-  TaskStatus,
-  TaskType,
-  TaskEvent,
-  TaskEventType,
-  TaskEventListener,
-  TaskUploadRow,
-} from '../types/task';
+const fs = require('fs');
 
-const INITIAL_DEMO_TASKS: Task[] = [];
+let content = fs.readFileSync('store/taskStore.ts', 'utf8');
 
-export const generateNextTaskId = (tasks: Task[]): string => {
-  let maxId = 0;
-  tasks.forEach((t) => {
-    const match = t.task_id.match(/(?:T|TASK)-(\d+)/i);
-    if (match) {
-      const num = parseInt(match[1], 10);
-      if (num > maxId) maxId = num;
-    }
-  });
-  return `T-${(maxId + 1).toString().padStart(3, '0')}`;
-};
+// 1. Add Supabase import
+content = content.replace(
+  "import { create } from 'zustand';",
+  "import { create } from 'zustand';\nimport { supabase } from '../lib/supabaseClient';"
+);
 
-const getPriorityRank = (priority: TaskPriority): number => {
-  switch (priority) {
-    case 'URGENT': return 300;
-    case 'LOW': return 200;
-    case 'NORMAL':
-    default: return 100;
-  }
-};
-
-export const sortPendingTasksByPriority = (pendingTasks: Task[]): Task[] => {
-  return [...pendingTasks].sort((a, b) => {
-    const rankA = getPriorityRank(a.priority);
-    const rankB = getPriorityRank(b.priority);
-    if (rankB !== rankA) {
-      return rankB - rankA;
-    }
-    return new Date(a.created_time).getTime() - new Date(b.created_time).getTime();
-  });
-};
-
-export interface ImportedRowValidation {
-  valid: boolean;
-  error?: string;
-  task?: Omit<Task, 'task_id' | 'created_time' | 'assigned_time' | 'started_time' | 'completed_time' | 'failed_time' | 'reassigned_count' | 'failure_reason' | 'status' | 'assigned_robot_id'>;
-}
-
-const getFieldValue = (item: any, possibleKeys: string[]): string | undefined => {
-  if (!item || typeof item !== 'object') return undefined;
-  for (const k of possibleKeys) {
-    if (item[k] !== undefined && item[k] !== null && String(item[k]).trim() !== '') {
-      return String(item[k]).trim();
-    }
-  }
-  const itemKeys = Object.keys(item);
-  for (const key of itemKeys) {
-    const normKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
-    for (const targetKey of possibleKeys) {
-      const normTarget = targetKey.toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (normKey === normTarget) {
-        const val = item[key];
-        if (val !== undefined && val !== null && String(val).trim() !== '') {
-          return String(val).trim();
-        }
-      }
-    }
-  }
-  return undefined;
-};
-
-export const validateImportedRow = (item: any, rowNum: number): ImportedRowValidation => {
-  const rawType = getFieldValue(item, ['Task Type', 'task_type', 'taskType', 'type']) || '';
-  if (!rawType) return { valid: false, error: `Row ${rowNum}: Missing required column "Task Type".` };
-
-  let taskType: TaskType | null = null;
-  const normType = rawType.toUpperCase().replace(/[_\-\s]+/g, ' ');
-  if (normType === 'DELIVER ITEM' || normType === 'DELIVER_ITEM' || normType === 'DELIVER') taskType = 'DELIVER_ITEM';
-  else if (normType === 'RESTOCK SHELF' || normType === 'RESTOCK_SHELF' || normType === 'RESTOCK') taskType = 'RESTOCK_SHELF';
-  else if (normType === 'TAKE TO PACKING' || normType === 'TAKE_TO_PACKING' || normType === 'PACKING') taskType = 'TAKE_TO_PACKING';
-  else if (normType === 'STORE ITEM' || normType === 'STORE_ITEM' || normType === 'STORE') taskType = 'STORE_ITEM';
-  else if (normType === 'MOVE CONTAINER' || normType === 'MOVE_CONTAINER' || normType === 'CONTAINER') taskType = 'MOVE_CONTAINER';
-
-  if (!taskType) return { valid: false, error: `Row ${rowNum}: Invalid Task Type "${rawType}".` };
-
-  const rawPriorityStr = getFieldValue(item, ['Priority', 'priority']) || 'NORMAL';
-  const rawPriority = rawPriorityStr.toUpperCase();
-  let priority: TaskPriority | null = null;
-  if (rawPriority === 'URGENT') priority = 'URGENT';
-  else if (rawPriority === 'LOW') priority = 'LOW';
-  else if (rawPriority === 'NORMAL') priority = 'NORMAL';
-
-  if (!priority) return { valid: false, error: `Row ${rowNum}: Invalid Priority "${rawPriorityStr}".` };
-
-  const pickup = getFieldValue(item, ['Source', 'source', 'pickup_point', 'pickupPoint', 'pickup', 'p1']) || '';
-  const drop = getFieldValue(item, ['Target', 'target', 'destination', 'drop_point', 'dropPoint', 'drop', 'd1']) || '';
-
-  if (!pickup) return { valid: false, error: `Row ${rowNum}: Missing required column "Source".` };
-  if (!drop) return { valid: false, error: `Row ${rowNum}: Missing required column "Target".` };
-
-  const rawWeight = getFieldValue(item, ['Weight', 'weight']);
-  const weight = rawWeight !== undefined && !isNaN(Number(rawWeight)) && Number(rawWeight) >= 0 ? Number(rawWeight) : 10;
-
-  return {
-    valid: true,
-    task: {
-      task_type: taskType,
-      pickup_point: pickup,
-      drop_point: drop,
-      priority,
-      weight,
-    },
-  };
-};
-
-const eventListeners: Set<TaskEventListener> = new Set();
-const notifyListeners = (type: TaskEventType, task: Task, metadata?: Record<string, unknown>) => {
-  const event: TaskEvent = { type, task, timestamp: new Date().toISOString(), metadata };
-  eventListeners.forEach((listener) => { try { listener(event); } catch (e) { } });
-};
-
-interface TaskState {
+// 2. Replace interface TaskState
+const interfaceRegex = /interface TaskState \{[\s\S]*?subscribeToTaskEvents: \(listener: TaskEventListener\) => \(\) => void;\n\}/;
+const newInterface = `interface TaskState {
   tasks: Task[];
   activeView: 'WAREHOUSE' | 'TASKS';
+
   setActiveView: (view: 'WAREHOUSE' | 'TASKS') => void;
 
   fetchTasks: () => Promise<void>;
@@ -156,10 +43,14 @@ interface TaskState {
   saveTasks: () => string;
   loadTasks: (jsonContent: string) => boolean;
   clearTasks: () => void;
-  subscribeToTaskEvents: (listener: TaskEventListener) => () => void;
-}
 
-export const useTaskStore = create<TaskState>()(
+  subscribeToTaskEvents: (listener: TaskEventListener) => () => void;
+}`;
+content = content.replace(interfaceRegex, newInterface);
+
+// 3. Replace the store implementation block
+const storeRegex = /export const useTaskStore = create<TaskState>\(\)\([\s\S]*?\n\);/;
+const newStore = `export const useTaskStore = create<TaskState>()(
   persist(
     (set, get) => ({
       tasks: INITIAL_DEMO_TASKS,
@@ -168,7 +59,14 @@ export const useTaskStore = create<TaskState>()(
       setActiveView: (view) => set({ activeView: view }),
 
       fetchTasks: async () => {
-        // No-op for local storage since Zustand persist handles hydration
+        const { data, error } = await supabase.from('tasks').select('*').order('created_time', { ascending: true });
+        if (error) {
+          console.error('Error fetching tasks from Supabase:', error);
+          return;
+        }
+        if (data) {
+          set({ tasks: data as Task[] });
+        }
       },
 
       createTask: async (taskData) => {
@@ -186,6 +84,12 @@ export const useTaskStore = create<TaskState>()(
           reassigned_count: 0,
           failure_reason: null,
         };
+
+        const { error } = await supabase.from('tasks').insert(newTask);
+        if (error) {
+          console.error('Error inserting task:', error);
+          return { success: false, taskId: generatedId, error: error.message };
+        }
 
         set((state) => ({
           tasks: [...state.tasks, newTask],
@@ -208,7 +112,7 @@ export const useTaskStore = create<TaskState>()(
           const validation = validateImportedRow(item, rowNum);
 
           if (!validation.valid || !validation.task) {
-            errors.push(validation.error || `Row ${rowNum}: Invalid task data.`);
+            errors.push(validation.error || \`Row \${rowNum}: Invalid task data.\`);
             continue;
           }
 
@@ -233,6 +137,13 @@ export const useTaskStore = create<TaskState>()(
         }
 
         if (newTasksToPush.length > 0) {
+          const { error } = await supabase.from('tasks').insert(newTasksToPush);
+          if (error) {
+            console.error('Error batch inserting tasks:', error);
+            errors.push('Database insert failed.');
+            return { success: false, addedCount: 0, errors };
+          }
+          
           set(() => ({
             tasks: runningTasksList,
           }));
@@ -243,6 +154,11 @@ export const useTaskStore = create<TaskState>()(
       },
 
       updateTask: async (taskId, updates) => {
+        const { error } = await supabase.from('tasks').update(updates).eq('task_id', taskId);
+        if (error) {
+          console.error('Error updating task:', error);
+          return;
+        }
         set((state) => ({
           tasks: state.tasks.map((t) => (t.task_id === taskId ? { ...t, ...updates } : t)),
         }));
@@ -251,6 +167,11 @@ export const useTaskStore = create<TaskState>()(
       },
 
       deleteTask: async (taskId) => {
+        const { error } = await supabase.from('tasks').delete().eq('task_id', taskId);
+        if (error) {
+          console.error('Error deleting task:', error);
+          return;
+        }
         const task = get().getTask(taskId);
         set((state) => ({
           tasks: state.tasks.filter((t) => t.task_id !== taskId),
@@ -259,6 +180,11 @@ export const useTaskStore = create<TaskState>()(
       },
 
       updatePriority: async (taskId, priority) => {
+        const { error } = await supabase.from('tasks').update({ priority }).eq('task_id', taskId);
+        if (error) {
+          console.error('Error updating priority:', error);
+          return;
+        }
         set((state) => ({
           tasks: state.tasks.map((t) => (t.task_id === taskId ? { ...t, priority } : t)),
         }));
@@ -270,24 +196,31 @@ export const useTaskStore = create<TaskState>()(
         const oldTask = get().getTask(taskId);
         if (!oldTask) return { success: false, error: 'Task not found' };
 
-        // Instead of creating a new task, we reset the existing task to PENDING
-        const updates: Partial<Task> = {
+        const generatedId = generateNextTaskId(get().tasks);
+        const newTask: Task = {
+          ...oldTask,
+          task_id: generatedId,
           status: 'PENDING',
           assigned_robot_id: null,
+          created_time: new Date().toISOString(),
           assigned_time: null,
           started_time: null,
           completed_time: null,
           failed_time: null,
+          reassigned_count: 0,
           failure_reason: null,
         };
 
+        const { error } = await supabase.from('tasks').insert(newTask);
+        if (error) {
+          return { success: false, error: error.message };
+        }
+
         set((state) => ({
-          tasks: state.tasks.map((t) => (t.task_id === taskId ? { ...t, ...updates } : t)),
+          tasks: [...state.tasks, newTask],
         }));
-        
-        const task = get().getTask(taskId);
-        if (task) notifyListeners('TASK_UPDATED', task);
-        return { success: true, newTaskId: taskId };
+        notifyListeners('TASK_CREATED', newTask);
+        return { success: true, newTaskId: generatedId };
       },
 
       getTask: (taskId) => get().tasks.find((t) => t.task_id === taskId),
@@ -302,6 +235,9 @@ export const useTaskStore = create<TaskState>()(
           ? { status: 'ASSIGNED', assigned_robot_id: robotId, assigned_time: new Date().toISOString() }
           : { status: 'PENDING', assigned_robot_id: null };
 
+        const { error } = await supabase.from('tasks').update(updates).eq('task_id', taskId);
+        if (error) return;
+
         set((state) => ({
           tasks: state.tasks.map((t) => (t.task_id === taskId ? { ...t, ...updates } : t))
         }));
@@ -315,6 +251,9 @@ export const useTaskStore = create<TaskState>()(
 
       startTask: async (taskId) => {
         const started_time = new Date().toISOString();
+        const { error } = await supabase.from('tasks').update({ status: 'IN_PROGRESS', started_time }).eq('task_id', taskId);
+        if (error) return;
+
         set((state) => ({
           tasks: state.tasks.map((t) => t.task_id === taskId ? { ...t, status: 'IN_PROGRESS', started_time } : t),
         }));
@@ -324,6 +263,9 @@ export const useTaskStore = create<TaskState>()(
 
       completeTask: async (taskId) => {
         const completed_time = new Date().toISOString();
+        const { error } = await supabase.from('tasks').update({ status: 'COMPLETED', completed_time }).eq('task_id', taskId);
+        if (error) return;
+
         set((state) => ({
           tasks: state.tasks.map((t) => t.task_id === taskId ? { ...t, status: 'COMPLETED', completed_time } : t),
         }));
@@ -333,6 +275,9 @@ export const useTaskStore = create<TaskState>()(
 
       failTask: async (taskId, reason = 'Execution failed') => {
         const failed_time = new Date().toISOString();
+        const { error } = await supabase.from('tasks').update({ status: 'FAILED', failed_time, failure_reason: reason }).eq('task_id', taskId);
+        if (error) return;
+
         set((state) => ({
           tasks: state.tasks.map((t) => t.task_id === taskId ? { ...t, status: 'FAILED', failed_time, failure_reason: reason } : t),
         }));
@@ -345,9 +290,12 @@ export const useTaskStore = create<TaskState>()(
         if (!task) return;
         const reassigned_count = task.reassigned_count + 1;
         
-        const updates: Partial<Task> = { status: 'PENDING', assigned_robot_id: null, reassigned_count, failure_reason: reason };
+        const updates = { status: 'PENDING', assigned_robot_id: null, reassigned_count, failure_reason: reason };
+        const { error } = await supabase.from('tasks').update(updates).eq('task_id', taskId);
+        if (error) return;
+
         set((state) => ({
-          tasks: state.tasks.map((t) => t.task_id === taskId ? { ...t, ...updates } : t),
+          tasks: state.tasks.map((t) => t.task_id === taskId ? { ...t, ...updates as Partial<Task> } : t),
         }));
         notifyListeners('TASK_REASSIGNED', task, { reason });
       },
@@ -358,12 +306,14 @@ export const useTaskStore = create<TaskState>()(
         
         for (const t of affectedTasks) {
           const failed_time = new Date().toISOString();
-          const failure_reason = `${reason} (${robotId})`;
+          const failure_reason = \`\${reason} (\${robotId})\`;
           const reassigned_count = t.reassigned_count + 1;
-          const updates: Partial<Task> = { status: 'PENDING', assigned_robot_id: null, failed_time, failure_reason, reassigned_count };
+          const updates = { status: 'PENDING', assigned_robot_id: null, failed_time, failure_reason, reassigned_count };
+          
+          await supabase.from('tasks').update(updates).eq('task_id', t.task_id);
           
           set((s) => ({
-            tasks: s.tasks.map((task) => task.task_id === t.task_id ? { ...task, ...updates } : task)
+            tasks: s.tasks.map((task) => task.task_id === t.task_id ? { ...task, ...updates as Partial<Task> } : task)
           }));
           
           const updated = get().getTask(t.task_id);
@@ -404,4 +354,7 @@ export const useTaskStore = create<TaskState>()(
       name: 'task-store-storage',
     }
   )
-);
+);`;
+content = content.replace(storeRegex, newStore);
+
+fs.writeFileSync('store/taskStore.ts', content, 'utf8');

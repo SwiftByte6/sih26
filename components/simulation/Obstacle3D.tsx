@@ -17,8 +17,12 @@ const OBSTACLE_ASSETS = [ASSET_URLS.oilDrums, ASSET_URLS.palletBarrels, ASSET_UR
 export const Obstacle3D: React.FC<Props> = ({ obstacle, cellSize, onOrbitLock }) => {
   const width = obstacle.width * cellSize;
   const depth = obstacle.height * cellSize;
-  const idx = Math.abs(obstacle.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % OBSTACLE_ASSETS.length;
-  const url = OBSTACLE_ASSETS[idx];
+  
+  let url = obstacle.assetUrl;
+  if (!url) {
+    const idx = Math.abs(obstacle.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % OBSTACLE_ASSETS.length;
+    url = OBSTACLE_ASSETS[idx];
+  }
 
   return (
     <BuilderObject3D

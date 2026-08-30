@@ -145,7 +145,7 @@ export const AddTaskModal: React.FC<AddTaskModalProps> = ({ isOpen, onClose }) =
   const sourceOptions = getFilteredSourceOptions(taskType, pois, shelves);
   const targetOptions = getFilteredTargetOptions(taskType, pois, shelves);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
 
@@ -164,7 +164,7 @@ export const AddTaskModal: React.FC<AddTaskModalProps> = ({ isOpen, onClose }) =
       return;
     }
 
-    const res = createTask({
+    const res = await createTask({
       task_type: taskType,
       pickup_point: pickupPoint.trim(),
       drop_point: dropPoint.trim(),
