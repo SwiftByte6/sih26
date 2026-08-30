@@ -123,37 +123,87 @@ export const Toolbar: React.FC = () => {
   };
 
   const handleToolbarClick = async (label: string) => {
-    try {
-      if (label === 'Open') {
-        const { open } = await import('@tauri-apps/plugin-dialog');
-        const file = await open({
-          filters: [{ name: 'Config', extensions: ['json'] }]
-        });
-        if (file) {
-           const { readTextFile } = await import('@tauri-apps/plugin-fs');
-           // file is string or object depending on Tauri v1/v2, usually object in v2. 
-           // In Tauri v2 it might return an object with a path property, or string.
-           const path = typeof file === 'string' ? file : (file as any).path;
-           if (path) {
-             const content = await readTextFile(path);
-             console.log("Loaded content:", content.substring(0, 50));
-           }
-        }
-      } else if (label === 'Save') {
-        const { save } = await import('@tauri-apps/plugin-dialog');
-        const file = await save({
-          filters: [{ name: 'Config', extensions: ['json'] }]
-        });
-        if (file) {
-          const { writeTextFile } = await import('@tauri-apps/plugin-fs');
-          await writeTextFile(file, JSON.stringify({ demo: "data" }));
-          console.log("Saved");
-        }
-      } else if (label === 'Grid') {
-        toggleGrid();
+    if (label === 'New') {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('amr-warehouse-layout');
+        window.location.reload();
       }
-    } catch (e) {
-      console.log("Native API failed (fallback or not in Tauri):", e);
+    } else if (label === 'Open') {
+      const isTauri = typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI_IPC__' in window);
+      if (isTauri) {
+        try {
+          const { open } = await import('@tauri-apps/plugin-dialog');
+          const file = await open({ filters: [{ name: 'Config', extensions: ['json'] }] });
+          if (file) {
+            const { readTextFile } = await import('@tauri-apps/plugin-fs');
+            const path = typeof file === 'string' ? file : (file as any).path;
+            if (path) {
+              const content = await readTextFile(path);
+              const parsed = JSON.parse(content);
+              if (parsed && parsed.shelves && parsed.robots) {
+                useWarehouseStore.getState().loadLayout(parsed);
+              } else {
+                alert("Invalid layout file format");
+              }
+            }
+          }
+        } catch (e) {
+          console.error("Tauri Open failed", e);
+        }
+      } else {
+        // Web fallback
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json';
+        input.onchange = async (e) => {
+          const file = (e.target as HTMLInputElement).files?.[0];
+          if (file) {
+            try {
+              const text = await file.text();
+              const parsed = JSON.parse(text);
+              if (parsed && parsed.shelves && parsed.robots) {
+                useWarehouseStore.getState().loadLayout(parsed);
+              } else {
+                alert("Invalid layout file format");
+              }
+            } catch (err) {
+              console.error("Failed to parse file", err);
+              alert("Failed to parse file");
+            }
+          }
+        };
+        input.click();
+      }
+    } else if (label === 'Save') {
+      const isTauri = typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI_IPC__' in window);
+      const snap = useWarehouseStore.getState().getSnapshot();
+      const json = JSON.stringify(snap, null, 2);
+      
+      if (isTauri) {
+        try {
+          const { save } = await import('@tauri-apps/plugin-dialog');
+          const file = await save({ filters: [{ name: 'Config', extensions: ['json'] }] });
+          if (file) {
+            const { writeTextFile } = await import('@tauri-apps/plugin-fs');
+            await writeTextFile(file, json);
+          }
+        } catch (e) {
+          console.error("Tauri Save failed", e);
+        }
+      } else {
+        // Web fallback
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'warehouse-layout.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+    } else if (label === 'Grid') {
+      toggleGrid();
     }
   };
 

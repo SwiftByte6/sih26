@@ -37,7 +37,7 @@ export const demoWarehouse = {
   ] as Path[],
 
   obstacles: [
-    { id: 'O1', col: 20, row: 25, width: 2, height: 2 }
+    { id: 'O1', col: 15, row: 18, width: 2, height: 2 }
   ] as Obstacle[],
 
   pois: [

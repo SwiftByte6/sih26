@@ -58,6 +58,7 @@ export const InspectorPanel: React.FC = () => {
   const updatePoi = useWarehouseStore((s) => s.updatePoi);
   const updateRobot = useWarehouseStore((s) => s.updateRobot);
   const deleteSelected = useWarehouseStore((s) => s.deleteSelected);
+  const duplicateSelected = useWarehouseStore((s) => s.duplicateSelected);
 
   const selectedRobot = selectedItemType === 'ROBOT' ? robots.find((r) => r.id === selectedItemId) : null;
   const selectedObstacle = selectedItemType === 'OBSTACLE' ? obstacles.find((o) => o.id === selectedItemId) : null;
@@ -258,9 +259,14 @@ export const InspectorPanel: React.FC = () => {
         )}
 
         {builder && selectedItemId && selectedItemType && selectedItemType !== 'FLOOR' && selectedItemType !== 'WALL' && (
-          <button onClick={deleteSelected} className="px-4 py-1.5 bg-danger text-white rounded-sm hover:bg-opacity-80 font-medium w-full transition-colors">
-            Delete
-          </button>
+          <div className="flex gap-2 w-full mt-4">
+            <button onClick={duplicateSelected} className="px-4 py-1.5 bg-workspace border border-border text-text rounded-sm hover:bg-opacity-80 font-medium w-full transition-colors">
+              Duplicate
+            </button>
+            <button onClick={deleteSelected} className="px-4 py-1.5 bg-danger text-white rounded-sm hover:bg-opacity-80 font-medium w-full transition-colors">
+              Delete
+            </button>
+          </div>
         )}
       </div>
     </div>

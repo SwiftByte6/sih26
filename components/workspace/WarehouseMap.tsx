@@ -94,7 +94,8 @@ export const WarehouseMap: React.FC = () => {
               const col = Math.floor((pos.x - pan.x) / scale / cellSize);
               const row = Math.floor((pos.y - pan.y) / scale / cellSize);
               if (appMode === 'BUILDER' && pendingPlaceType) {
-                placeAtCell(pendingPlaceType, row, col);
+                const { pendingAssetUrl } = useWarehouseStore.getState();
+                placeAtCell(pendingPlaceType, row, col, pendingAssetUrl);
                 return;
               }
               setSelectedItem('FLOOR', 'FLOOR');
