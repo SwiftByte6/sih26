@@ -73,15 +73,7 @@ function snapshotFrom(state: {
     obstacles: state.obstacles,
     pois: state.pois,
     pallets: state.pallets,
-    robots: state.robots.map((r) => ({
-      ...r,
-      path: [],
-      currentTask: null,
-      currentTaskId: null,
-      taskPhase: null,
-      pickupPoint: null,
-      dropPoint: null,
-    })),
+    robots: state.robots.map((r) => ({ ...r })),
     intersections: state.intersections,
     paths: state.paths,
   });
@@ -438,6 +430,13 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
         if (r.id !== id) return r;
         const next = { ...r, ...updates };
         const pos = clampMove(next.row, next.col, 1, 1, state);
+        
+        // If moved in builder mode, clear its path and task to prevent teleportation
+        const moved = pos.row !== r.row || pos.col !== r.col;
+        if (state.appMode === 'BUILDER' && moved) {
+          return { ...next, ...pos, path: [], state: 'WAITING', currentTask: null, currentTaskId: null, taskPhase: null, pickupPoint: null, dropPoint: null };
+        }
+        
         return { ...next, ...pos };
       }),
     };

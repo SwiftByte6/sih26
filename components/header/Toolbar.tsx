@@ -59,7 +59,10 @@ function ModeViewToggles() {
       {appMode === 'BUILDER' && (
         <button
           className="px-2 py-1 bg-success text-white rounded-sm text-[11px] font-semibold"
-          onClick={() => applyLayout()}
+          onClick={() => {
+            const res = applyLayout();
+            if (!res.ok) alert(`Cannot apply layout. There are ${res.issues.filter(i => i.severity === 'error').length} blocking errors. Please check the Builder Sidebar.`);
+          }}
         >
           APPLY LAYOUT
         </button>
