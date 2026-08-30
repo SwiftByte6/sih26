@@ -156,6 +156,7 @@ interface TaskState {
   saveTasks: () => string;
   loadTasks: (jsonContent: string) => boolean;
   clearTasks: () => void;
+  resetTasks: () => void;
   subscribeToTaskEvents: (listener: TaskEventListener) => () => void;
 }
 
@@ -398,6 +399,22 @@ export const useTaskStore = create<TaskState>()(
       
       clearTasks: () => {
         set({ tasks: [] });
+      },
+
+      resetTasks: () => {
+        set((state) => ({
+          tasks: state.tasks.map((t) => ({
+            ...t,
+            status: 'PENDING' as TaskStatus,
+            assigned_robot_id: null,
+            assigned_time: null,
+            started_time: null,
+            completed_time: null,
+            failed_time: null,
+            reassigned_count: 0,
+            failure_reason: null,
+          })),
+        }));
       }
     }),
     {
