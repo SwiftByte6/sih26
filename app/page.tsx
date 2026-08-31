@@ -15,6 +15,21 @@ import { useTaskStore } from '../store/taskStore';
 
 export default function SimulatorPage() {
   const activeView = useTaskStore((state) => state.activeView);
+  const [mounted, setMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return (
+      <div className="h-screen w-screen flex flex-col bg-white overflow-hidden text-text select-none">
+        <TitleBar />
+        <MenuBar />
+        <Toolbar />
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen w-screen flex flex-col bg-white overflow-hidden text-text select-none">

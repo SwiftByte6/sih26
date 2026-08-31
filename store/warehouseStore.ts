@@ -1047,7 +1047,8 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
     });
 
     // Trim communications to MAX_MESSAGES
-    const allComms = [...state.communications, ...newMessages];
+    const currentComms = get().communications;
+    const allComms = [...currentComms, ...newMessages];
     if (allComms.length > MAX_MESSAGES) {
       allComms.splice(0, allComms.length - MAX_MESSAGES);
     }

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useWarehouseStore } from './warehouseStore';
 import { AmrAgentNode, P2PMessage, P2PMessageType } from '../types/p2p';
 import { SimulatedP2PNetwork } from '../engine/p2p/SimulatedP2PNetwork';
 
@@ -54,8 +55,7 @@ export const useP2PStore = create<P2PState>((set, get) => ({
       const bodyText = typeof payload === 'string' ? payload : payload?.body || payload?.status || type;
       const category = (type.startsWith('TASK_') ? 'TASK' : type === 'STATUS_UPDATE' ? 'SYSTEM' : 'COORDINATION') as any;
       try {
-        const warehouseStore = require('./warehouseStore').useWarehouseStore;
-        warehouseStore.getState().addCommunication({
+        useWarehouseStore.getState().addCommunication({
           id: `COMM-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
           timestamp: Date.now(),
           sender: senderId,
@@ -64,7 +64,9 @@ export const useP2PStore = create<P2PState>((set, get) => ({
           priority: 'NORMAL',
           message: `[${type}] ${bodyText}`,
         });
-      } catch (e) {}
+      } catch (e) {
+        console.error("Failed to add communication", e);
+      }
     }
     get().processHeartbeats(); // sync store nodes snapshot
     return success;
@@ -76,8 +78,7 @@ export const useP2PStore = create<P2PState>((set, get) => ({
       const bodyText = typeof payload === 'string' ? payload : payload?.body || payload?.status || type;
       const category = (type.startsWith('TASK_') ? 'TASK' : type === 'STATUS_UPDATE' ? 'SYSTEM' : 'COORDINATION') as any;
       try {
-        const warehouseStore = require('./warehouseStore').useWarehouseStore;
-        warehouseStore.getState().addCommunication({
+        useWarehouseStore.getState().addCommunication({
           id: `COMM-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
           timestamp: Date.now(),
           sender: senderId,
@@ -86,7 +87,9 @@ export const useP2PStore = create<P2PState>((set, get) => ({
           priority: 'NORMAL',
           message: `[${type}] ${bodyText}`,
         });
-      } catch (e) {}
+      } catch (e) {
+        console.error("Failed to add broadcast communication", e);
+      }
     }
     get().processHeartbeats(); // sync store nodes snapshot
     return success;
