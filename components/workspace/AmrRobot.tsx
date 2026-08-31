@@ -10,9 +10,10 @@ interface AmrRobotProps {
 }
 
 export const AmrRobot: React.FC<AmrRobotProps> = ({ robot }) => {
-  const { selectedItemId, setSelectedItem, cellSize, activeCommLinks } = useWarehouseStore();
+  const { selectedItemId, setSelectedItem, cellSize, activeCommLinks, appMode, updateRobot } = useWarehouseStore();
   const isSelected = selectedItemId === robot.id;
   const isCommunicating = activeCommLinks.some(l => l.from === robot.id);
+  const builder = appMode === 'BUILDER';
   
   // Calculate position
   const x = robot.col * cellSize;
@@ -44,6 +45,13 @@ export const AmrRobot: React.FC<AmrRobotProps> = ({ robot }) => {
     <Group 
       x={x} 
       y={y}
+      draggable
+      onDragEnd={(e) => {
+        updateRobot(robot.id, {
+          col: Math.round(e.target.x() / cellSize),
+          row: Math.round(e.target.y() / cellSize),
+        });
+      }}
       onClick={handleSelect}
       onTap={handleSelect}
     >

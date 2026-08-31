@@ -1,8 +1,75 @@
 'use client';
 
 import React, { useState } from 'react';
-import { File, FolderOpen, Save, Undo, Redo, MousePointer2, Move, ZoomIn, ZoomOut, Maximize, Grid3X3, Play, Upload } from 'lucide-react';
+import { File, FolderOpen, Save, Undo, Redo, MousePointer2, Move, ZoomIn, ZoomOut, Maximize, Grid3X3, Play, Upload, Radar } from 'lucide-react';
 import { useWarehouseStore } from '../../store/warehouseStore';
+
+function ModeViewToggles() {
+  const appMode = useWarehouseStore((s) => s.appMode);
+  const setAppMode = useWarehouseStore((s) => s.setAppMode);
+  const viewMode = useWarehouseStore((s) => s.viewMode);
+  const setViewMode = useWarehouseStore((s) => s.setViewMode);
+  const applyLayout = useWarehouseStore((s) => s.applyLayout);
+  const showSensors = useWarehouseStore((s) => s.showSensors);
+  const toggleSensors = useWarehouseStore((s) => s.toggleSensors);
+
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex items-center gap-1">
+        <span className="text-[10px] font-bold text-muted tracking-wider">MODE</span>
+        <div className="flex bg-app border border-border rounded-sm overflow-hidden">
+          <button
+            className={`px-2 py-1 text-[11px] font-semibold ${appMode === 'BUILDER' ? 'bg-accent text-white' : 'text-text hover:bg-toolbar'}`}
+            onClick={() => setAppMode('BUILDER')}
+          >
+            BUILDER
+          </button>
+          <button
+            className={`px-2 py-1 text-[11px] font-semibold ${appMode === 'PLAY' ? 'bg-accent text-white' : 'text-text hover:bg-toolbar'}`}
+            onClick={() => setAppMode('PLAY')}
+          >
+            PLAY
+          </button>
+        </div>
+      </div>
+      <div className="flex items-center gap-1">
+        <span className="text-[10px] font-bold text-muted tracking-wider">VIEW</span>
+        <div className="flex bg-app border border-border rounded-sm overflow-hidden">
+          <button
+            className={`px-2 py-1 text-[11px] font-semibold ${viewMode === '2D' ? 'bg-white text-accent' : 'text-text hover:bg-toolbar'}`}
+            onClick={() => setViewMode('2D')}
+          >
+            2D
+          </button>
+          <button
+            className={`px-2 py-1 text-[11px] font-semibold ${viewMode === '3D' ? 'bg-white text-accent' : 'text-text hover:bg-toolbar'}`}
+            onClick={() => setViewMode('3D')}
+          >
+            3D
+          </button>
+        </div>
+      </div>
+      <button
+        className={`flex items-center gap-1 px-2 py-1 rounded-sm text-[11px] border ${showSensors ? 'bg-accent text-white border-accent' : 'border-border text-muted'}`}
+        onClick={toggleSensors}
+        title="Sensor visualization"
+      >
+        <Radar size={12} />
+      </button>
+      {appMode === 'BUILDER' && (
+        <button
+          className="px-2 py-1 bg-success text-white rounded-sm text-[11px] font-semibold"
+          onClick={() => {
+            const res = applyLayout();
+            if (!res.ok) alert(`Cannot apply layout. There are ${res.issues.filter(i => i.severity === 'error').length} blocking errors. Please check the Builder Sidebar.`);
+          }}
+        >
+          APPLY LAYOUT
+        </button>
+      )}
+    </div>
+  );
+}
 
 const TOOLBAR_GROUPS = [
   [
@@ -56,37 +123,87 @@ export const Toolbar: React.FC = () => {
   };
 
   const handleToolbarClick = async (label: string) => {
-    try {
-      if (label === 'Open') {
-        const { open } = await import('@tauri-apps/plugin-dialog');
-        const file = await open({
-          filters: [{ name: 'Config', extensions: ['json'] }]
-        });
-        if (file) {
-           const { readTextFile } = await import('@tauri-apps/plugin-fs');
-           // file is string or object depending on Tauri v1/v2, usually object in v2. 
-           // In Tauri v2 it might return an object with a path property, or string.
-           const path = typeof file === 'string' ? file : (file as any).path;
-           if (path) {
-             const content = await readTextFile(path);
-             console.log("Loaded content:", content.substring(0, 50));
-           }
-        }
-      } else if (label === 'Save') {
-        const { save } = await import('@tauri-apps/plugin-dialog');
-        const file = await save({
-          filters: [{ name: 'Config', extensions: ['json'] }]
-        });
-        if (file) {
-          const { writeTextFile } = await import('@tauri-apps/plugin-fs');
-          await writeTextFile(file, JSON.stringify({ demo: "data" }));
-          console.log("Saved");
-        }
-      } else if (label === 'Grid') {
-        toggleGrid();
+    if (label === 'New') {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('amr-warehouse-layout');
+        window.location.reload();
       }
-    } catch (e) {
-      console.log("Native API failed (fallback or not in Tauri):", e);
+    } else if (label === 'Open') {
+      const isTauri = typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI_IPC__' in window);
+      if (isTauri) {
+        try {
+          const { open } = await import('@tauri-apps/plugin-dialog');
+          const file = await open({ filters: [{ name: 'Config', extensions: ['json'] }] });
+          if (file) {
+            const { readTextFile } = await import('@tauri-apps/plugin-fs');
+            const path = typeof file === 'string' ? file : (file as any).path;
+            if (path) {
+              const content = await readTextFile(path);
+              const parsed = JSON.parse(content);
+              if (parsed && parsed.shelves && parsed.robots) {
+                useWarehouseStore.getState().loadLayout(parsed);
+              } else {
+                alert("Invalid layout file format");
+              }
+            }
+          }
+        } catch (e) {
+          console.error("Tauri Open failed", e);
+        }
+      } else {
+        // Web fallback
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json';
+        input.onchange = async (e) => {
+          const file = (e.target as HTMLInputElement).files?.[0];
+          if (file) {
+            try {
+              const text = await file.text();
+              const parsed = JSON.parse(text);
+              if (parsed && parsed.shelves && parsed.robots) {
+                useWarehouseStore.getState().loadLayout(parsed);
+              } else {
+                alert("Invalid layout file format");
+              }
+            } catch (err) {
+              console.error("Failed to parse file", err);
+              alert("Failed to parse file");
+            }
+          }
+        };
+        input.click();
+      }
+    } else if (label === 'Save') {
+      const isTauri = typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI_IPC__' in window);
+      const snap = useWarehouseStore.getState().getSnapshot();
+      const json = JSON.stringify(snap, null, 2);
+      
+      if (isTauri) {
+        try {
+          const { save } = await import('@tauri-apps/plugin-dialog');
+          const file = await save({ filters: [{ name: 'Config', extensions: ['json'] }] });
+          if (file) {
+            const { writeTextFile } = await import('@tauri-apps/plugin-fs');
+            await writeTextFile(file, json);
+          }
+        } catch (e) {
+          console.error("Tauri Save failed", e);
+        }
+      } else {
+        // Web fallback
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'warehouse-layout.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+    } else if (label === 'Grid') {
+      toggleGrid();
     }
   };
 
@@ -128,6 +245,10 @@ export const Toolbar: React.FC = () => {
         </button>
         
         <div className="flex-1" />
+
+        <div className="flex items-center gap-3 mr-3">
+          <ModeViewToggles />
+        </div>
         
         <button 
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-[12px] font-medium transition-colors mr-2 ${

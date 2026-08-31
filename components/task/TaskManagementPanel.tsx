@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Plus,
   Upload,
@@ -347,8 +347,23 @@ export const TaskManagementPanel: React.FC = () => {
                           )}
                         </div>
                       </td>
+                      <td className="p-3 border-r border-border font-mono">{t.weight || 0} kg</td>
                       <td className="p-3 border-r border-border">
-                        {renderStatusBadge(t.status)}
+                        <div className="flex items-center gap-2">
+                          {renderStatusBadge(t.status)}
+                          {(t.status === 'COMPLETED' || t.status === 'FAILED') && (
+                            <button 
+                              onClick={() => {
+                                const redoTask = useTaskStore.getState().redoTask;
+                                if (redoTask) redoTask(t.task_id);
+                              }} 
+                              className="p-1 hover:bg-workspace border border-transparent hover:border-border rounded text-muted hover:text-text transition-colors" 
+                              title="Redo Task"
+                            >
+                              <RotateCcw size={12} />
+                            </button>
+                          )}
+                        </div>
                         {t.status === 'PENDING' && t.priority === 'URGENT' && (
                           (() => {
                             const warehouseRobots = useWarehouseStore.getState().robots;
@@ -394,7 +409,7 @@ export const TaskManagementPanel: React.FC = () => {
                           </div>
                         )}
                       </td>
-                      <td className="p-3 font-semibold font-mono border-r border-border">
+                      <td className="p-3 font-semibold font-mono">
                         {t.assigned_robot_id ? (
                           <span className="px-2 py-0.5 rounded bg-app border border-border text-text flex items-center gap-1 w-fit">
                             🤖 {t.assigned_robot_id}

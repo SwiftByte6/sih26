@@ -376,6 +376,7 @@ interface TaskState {
   addMultipleTasks: (tasksData: (TaskUploadRow | Partial<Task>)[]) => { success: boolean; addedCount: number; errors: string[] };
   updateTask: (taskId: string, updates: Partial<Task>) => void;
   deleteTask: (taskId: string) => { success: boolean; error?: string };
+  redoTask?: (taskId: string) => { success: boolean; newTaskId?: string; error?: string };
   updatePriority: (taskId: string, priority: TaskPriority) => void;
   updateTaskIneligibilityAudit: (taskId: string, robotId: string, reasons: string[]) => void;
 
@@ -523,6 +524,30 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
     notifyListeners('TASK_DELETED' as any, task);
     return { success: true };
+  },
+
+  redoTask: (taskId) => {
+    const oldTask = get().getTask(taskId);
+    if (!oldTask) return { success: false, error: 'Task not found' };
+
+    // Instead of creating a new task, we reset the existing task to PENDING
+    const updates: Partial<Task> = {
+      status: 'PENDING',
+      assigned_robot_id: null,
+      assigned_time: null,
+      started_time: null,
+      completed_time: null,
+      failed_time: null,
+      failure_reason: null,
+    };
+
+    set((state) => ({
+      tasks: state.tasks.map((t) => (t.task_id === taskId ? { ...t, ...updates } : t)),
+    }));
+    
+    const task = get().getTask(taskId);
+    if (task) notifyListeners('TASK_UPDATED' as any, task);
+    return { success: true, newTaskId: taskId };
   },
 
   updatePriority: (taskId, priority) => {

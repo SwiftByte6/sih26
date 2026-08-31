@@ -172,6 +172,14 @@ export const UploadTaskListModal: React.FC<UploadTaskListModalProps> = ({ isOpen
             <span className="text-[11px] text-muted mt-1">
               Expected columns: Task Type, Source, Target, Priority, Weight
             </span>
+            <a
+              href="/demo_tasks.csv"
+              download="demo_tasks.csv"
+              className="text-accent text-[11px] underline mt-2 z-10"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Download Demo CSV
+            </a>
             <input
               ref={fileInputRef}
               type="file"

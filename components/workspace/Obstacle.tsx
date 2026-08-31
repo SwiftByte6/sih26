@@ -10,16 +10,15 @@ interface ObstacleProps {
 }
 
 export const Obstacle: React.FC<ObstacleProps> = ({ obstacle }) => {
-  const { updateObstacle, selectedItemId, setSelectedItem } = useWarehouseStore();
+  const { updateObstacle, selectedItemId, setSelectedItem, appMode } = useWarehouseStore();
   const isSelected = selectedItemId === obstacle.id;
+  const builder = appMode === 'BUILDER';
 
   const handleDragEnd = (e: any) => {
+    if (!builder) return;
     const { cellSize } = useWarehouseStore.getState();
-    // Snap to grid cells
     let newCol = Math.round(e.target.x() / cellSize);
     let newRow = Math.round(e.target.y() / cellSize);
-    
-    // Update position in store
     updateObstacle(obstacle.id, { col: newCol, row: newRow });
   };
 
@@ -29,7 +28,7 @@ export const Obstacle: React.FC<ObstacleProps> = ({ obstacle }) => {
     <Group 
       x={obstacle.col * cellSize} 
       y={obstacle.row * cellSize}
-      draggable
+      draggable={builder}
       onDragEnd={handleDragEnd}
       onClick={() => setSelectedItem(obstacle.id, 'OBSTACLE')}
       onTap={() => setSelectedItem(obstacle.id, 'OBSTACLE')}
