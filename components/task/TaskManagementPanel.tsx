@@ -328,6 +328,11 @@ export const TaskManagementPanel: React.FC = () => {
                       <td className="p-3 border-r border-border">
                         <div className="flex items-center gap-1.5">
                           {renderPriorityBadge(t)}
+                          {t.deliveryComplexity && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-purple-100 text-purple-900 border border-purple-300">
+                              {t.deliveryComplexity}
+                            </span>
+                          )}
                           {t.status === 'PENDING' && (
                             <select
                               value={t.priority}

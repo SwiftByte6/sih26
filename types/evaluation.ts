@@ -19,8 +19,10 @@ export interface TaskEvaluationResult {
   // Breakdown Sub-Scores (0 to 100)
   distanceScore: number;
   batteryScore: number;
+  travelTimeScore: number;
   workloadScore: number;
   capabilityScore: number;
+  sensingScore: number;
 
   // Final Composite Suitability Score (0 to 100)
   suitabilityScore: number;

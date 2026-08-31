@@ -51,6 +51,13 @@ export interface PeerBidEntry {
   timestamp: number;
   eligible: boolean;
   suitabilityScore: number;
+  distanceToPickup?: number;
+  estimatedTravelDistance?: number;
+  estimatedTimeSeconds?: number;
+  remainingBatteryAfterTask?: number;
+  capabilityScore?: number;
+  sensingScore?: number;
+  workloadScore?: number;
   evaluation?: TaskEvaluationResult;
 }
 
