@@ -401,6 +401,8 @@ interface TaskState {
   // Persistence
   saveTasks: () => string;
   loadTasks: (jsonContent: string) => boolean;
+  resetTasks: () => void;
+  clearTasks: () => void;
 
   // Event subscription
   subscribeToTaskEvents: (listener: TaskEventListener) => () => void;
@@ -752,6 +754,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     return JSON.stringify(payload, null, 2);
   },
 
+  resetTasks: () => set({ tasks: [] }),
+  clearTasks: () => set({ tasks: [] }),
   loadTasks: (jsonContent) => {
     try {
       const parsed = JSON.parse(jsonContent);

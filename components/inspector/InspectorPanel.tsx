@@ -2,13 +2,7 @@
 
 import React from 'react';
 import { useWarehouseStore } from '../../store/warehouseStore';
-<<<<<<< HEAD
 import { useP2PStore } from '../../store/p2pStore';
-
-export const InspectorPanel: React.FC = () => {
-  const { selectedItemId, selectedItemType, robots, obstacles, removeObstacle } = useWarehouseStore();
-  const p2pNodes = useP2PStore((state) => state.nodes);
-=======
 import { simulationToWorld } from '../../lib/coords';
 import { ObjectTransform } from '../../types/warehouse';
 
@@ -41,6 +35,7 @@ function Num({
 }
 
 export const InspectorPanel: React.FC = () => {
+  const p2pNodes = useP2PStore((state) => state.nodes);
   const selectedItemId = useWarehouseStore((s) => s.selectedItemId);
   const selectedItemType = useWarehouseStore((s) => s.selectedItemType);
   const robots = useWarehouseStore((s) => s.robots);
@@ -66,7 +61,6 @@ export const InspectorPanel: React.FC = () => {
   const updateRobot = useWarehouseStore((s) => s.updateRobot);
   const deleteSelected = useWarehouseStore((s) => s.deleteSelected);
   const duplicateSelected = useWarehouseStore((s) => s.duplicateSelected);
->>>>>>> origin/main
 
   const selectedRobot = selectedItemType === 'ROBOT' ? robots.find((r) => r.id === selectedItemId) : null;
   const selectedObstacle = selectedItemType === 'OBSTACLE' ? obstacles.find((o) => o.id === selectedItemId) : null;
@@ -218,7 +212,8 @@ export const InspectorPanel: React.FC = () => {
             <div>
               <div className="text-[10px] text-muted font-semibold mb-1">Current Task</div>
               <div className="font-mono bg-workspace p-1.5 border border-border rounded-sm">{selectedRobot.currentTask || 'None'}</div>
-            </div>            <div>
+            </div>
+            <div>
               <div className="text-[10px] text-muted font-semibold mb-1">Hardware Capabilities</div>
               <div className="flex flex-col gap-1 text-[11px] font-mono bg-workspace p-2 border border-border rounded-sm">
                 <div>Capability: <span className="font-bold">{selectedRobot.deliveryCapability || 'Standard Transport'}</span></div>
