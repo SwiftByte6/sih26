@@ -20,7 +20,9 @@ export type P2PMessageType =
   | 'EMERGENCY'
   // Phase 5 Failure Recovery Message Types
   | 'ROBOT_FAILURE'
-  | 'TASK_RECOVERY_ANNOUNCEMENT';
+  | 'TASK_RECOVERY_ANNOUNCEMENT'
+  // Phase 7 Dynamic Reallocation Message Types
+  | 'TASK_HANDOVER_REQUEST';
 
 export type PeerNodeStatus = 'ONLINE' | 'OFFLINE';
 

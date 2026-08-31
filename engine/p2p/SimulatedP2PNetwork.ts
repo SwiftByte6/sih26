@@ -114,6 +114,73 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
         }
       }
 
+      // Handle TASK_HANDOVER_REQUEST (Phase 7): Operational dynamic task reallocation
+      if (message.type === 'TASK_HANDOVER_REQUEST' && message.payload?.taskId) {
+        const payload = message.payload;
+        const taskId = payload.taskId;
+
+        const warehouseStore = require('../../store/warehouseStore').useWarehouseStore.getState();
+        const robotState = warehouseStore.robots.find((r: any) => r.id === targetNode.robotId);
+
+        // Exclude the handing-over robot, busy AMRs, offline AMRs, or failed AMRs
+        const isFree = robotState && (robotState.state === 'WAITING' || robotState.state === 'IDLE') && !robotState.currentTask;
+        if (isFree && robotState.isOnline !== false && robotState.state !== 'ERROR' && targetNode.robotId !== payload.robotId) {
+          targetNode.knownTasks = targetNode.knownTasks || {};
+          const handoverRound = payload.handoverRound || 1;
+
+          targetNode.knownTasks[taskId] = {
+            task: payload.taskData,
+            announcementTimestamp: message.timestamp,
+            allocationRound: handoverRound,
+            allocationState: 'ANNOUNCED',
+            peerBids: {},
+            peerProposals: {},
+            myBidSent: false,
+            myProposalSent: false,
+            claimedBy: null,
+          };
+
+          const evaluateTask = require('../evaluation/TaskEvaluator').evaluateTask;
+          const evalResult = evaluateTask(
+            robotState,
+            payload.taskData,
+            warehouseStore.pois,
+            warehouseStore.shelves
+          );
+
+          const taskKnowledge = targetNode.knownTasks[taskId];
+          taskKnowledge.evaluation = evalResult;
+          taskKnowledge.allocationState = 'EVALUATING';
+
+          taskKnowledge.peerBids[targetNode.robotId] = {
+            robotId: targetNode.robotId,
+            timestamp: message.timestamp,
+            eligible: evalResult.eligible,
+            suitabilityScore: evalResult.suitabilityScore,
+            evaluation: evalResult,
+          };
+
+          if (evalResult.eligible && !taskKnowledge.myBidSent) {
+            taskKnowledge.myBidSent = true;
+            taskKnowledge.allocationState = 'BIDDING';
+            setTimeout(() => {
+              this.broadcastMessage(targetNode.robotId, 'TASK_BID', {
+                taskId,
+                robotId: targetNode.robotId,
+                allocationRound: handoverRound,
+                isHandover: true,
+                taskPhase: payload.taskPhase,
+                originalRobotId: payload.robotId,
+                reason: payload.reason,
+                eligible: true,
+                suitabilityScore: evalResult.suitabilityScore,
+                body: `TASK_BID (HANDOVER): ${taskId} | Suitability: ${evalResult.suitabilityScore}/100`,
+              });
+            }, 0);
+          }
+        }
+      }
+
       // Handle TASK_RECOVERY_ANNOUNCEMENT (Phase 5): Exclude failed AMR, evaluate task, and bid
       if (message.type === 'TASK_RECOVERY_ANNOUNCEMENT' && message.payload?.taskId) {
         const payload = message.payload;
@@ -123,7 +190,7 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
         const robotState = warehouseStore.robots.find((r: any) => r.id === targetNode.robotId);
 
         // Failed robot and offline AMRs are strictly excluded
-        if (robotState && robotState.isOnline && robotState.state !== 'ERROR' && targetNode.robotId !== payload.failedRobotId) {
+        if (robotState && robotState.isOnline !== false && robotState.state !== 'ERROR' && targetNode.robotId !== payload.failedRobotId) {
           targetNode.knownTasks = targetNode.knownTasks || {};
           const recoveryRound = payload.recoveryRound || 1;
 
@@ -178,8 +245,6 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
           }
         }
       }
-
-      // Handle TASK_ANNOUNCEMENT: Store local task knowledge, trigger Phase 4A evaluation, and broadcast TASK_BID if eligible
       if (message.type === 'TASK_ANNOUNCEMENT' && message.payload?.task) {
         const task = message.payload.task;
         const incomingRound = message.payload.allocationRound || 1;
@@ -408,7 +473,16 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
 
           const warehouseStore = useWarehouseStore();
           const task = taskStore.getTask(taskId);
-          if (task && task.recoveryAudit?.failedRobotId) {
+          if (task && task.handoverAudit?.originalRobotId) {
+            const executeHandoverAssignment = require('../recovery/TaskHandoverManager').executeHandoverAssignment;
+            executeHandoverAssignment(
+              ownerRobotId,
+              task,
+              task.handoverAudit.handoverPhase || 'TO_PICKUP',
+              task.handoverAudit.originalRobotId,
+              task.handoverAudit.handoverReason
+            );
+          } else if (task && task.recoveryAudit?.failedRobotId) {
             const executeRecoveryAssignment = require('../recovery/FailureRecoveryManager').executeRecoveryAssignment;
             executeRecoveryAssignment(
               ownerRobotId,

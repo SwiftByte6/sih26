@@ -35,6 +35,7 @@ export interface Task {
   requiredSensingRadius?: number;
   ineligibilityAudit?: Record<string, string[]>;
   recoveryAudit?: { failedRobotId: string; recoveredRobotId?: string; recoveryPhase?: string; recoveryRound?: number };
+  handoverAudit?: { originalRobotId: string; replacementRobotId?: string; handoverReason: string; handoverPhase: string; handoverRound: number };
 }
 
 

@@ -163,14 +163,14 @@ export const generateNextTaskId = (tasks: Task[]): string => {
   return `T-${(maxId + 1).toString().padStart(3, '0')}`;
 };
 
-// Priority Rank: URGENT (300) -> LOW (200) -> NORMAL (100)
+// Priority Rank: URGENT (300) -> NORMAL (200) -> LOW (100)
 const getPriorityRank = (priority: TaskPriority): number => {
   switch (priority) {
     case 'URGENT':
       return 300;
-    case 'LOW':
-      return 200;
     case 'NORMAL':
+      return 200;
+    case 'LOW':
     default:
       return 100;
   }

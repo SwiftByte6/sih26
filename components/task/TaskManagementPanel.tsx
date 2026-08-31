@@ -18,6 +18,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { useTaskStore } from '../../store/taskStore';
+import { useWarehouseStore } from '../../store/warehouseStore';
 import { AddTaskModal } from './AddTaskModal';
 import { UploadTaskListModal } from './UploadTaskListModal';
 import { TaskStatus, TaskPriority, Task } from '../../types/task';
@@ -343,6 +344,26 @@ export const TaskManagementPanel: React.FC = () => {
                       </td>
                       <td className="p-3 border-r border-border">
                         {renderStatusBadge(t.status)}
+                        {t.status === 'PENDING' && t.priority === 'URGENT' && (
+                          (() => {
+                            const warehouseRobots = useWarehouseStore.getState().robots;
+                            const freeCount = warehouseRobots.filter((r) => (r.state === 'WAITING' || r.state === 'IDLE') && !r.currentTask && r.isOnline !== false).length;
+                            if (freeCount === 0) {
+                              return (
+                                <div className="mt-1.5 px-2 py-0.5 bg-amber-600 text-white rounded text-[9.5px] font-bold tracking-wide uppercase font-mono animate-pulse w-fit border border-amber-700 shadow-sm">
+                                  URGENT — WAITING FOR AMR
+                                </div>
+                              );
+                            }
+                            return null;
+                          })()
+                        )}
+                        {t.handoverAudit && (
+                          <div className="mt-1.5 p-1.5 bg-blue-50 border border-blue-300 text-blue-950 rounded text-[10px] font-mono leading-tight max-w-[280px]">
+                            <span className="font-bold uppercase tracking-wider text-[9px] text-blue-900 block mb-0.5">🤝 Dyn Handover ({t.handoverAudit.handoverReason}):</span>
+                            {t.handoverAudit.originalRobotId} → {t.handoverAudit.replacementRobotId || 'HANDING OVER...'}
+                          </div>
+                        )}
                         {t.recoveryAudit && (
                           <div className="mt-1.5 p-1.5 bg-amber-50 border border-amber-300 text-amber-950 rounded text-[10px] font-mono leading-tight max-w-[280px]">
                             <span className="font-bold uppercase tracking-wider text-[9px] text-amber-900 block mb-0.5">🔄 Decen Recovery:</span>

@@ -550,10 +550,16 @@ export const useWarehouseStore = create<WarehouseState>((set) => ({
             }
           }
           
-          // Battery warning
+          // Battery warning & Phase 7 Dynamic Handover Trigger
           const newBattery = robot.battery - 0.3;
           if (newBattery <= 20 && robot.battery > 20) {
-            p2pStore.broadcastMessage(robot.id, 'TEXT', { body: `Battery at ${Math.round(newBattery)}%. Requesting charger.` });
+            p2pStore.broadcastMessage(robot.id, 'TEXT', { body: `Battery at ${Math.round(newBattery)}%. Requesting charger & task handover.` });
+            if (robot.currentTask || robot.currentTaskId) {
+              try {
+                const requestTaskHandover = require('../engine/recovery/TaskHandoverManager').requestTaskHandover;
+                requestTaskHandover(robot.id, 'CRITICAL_BATTERY');
+              } catch (e) {}
+            }
           }
           
           return {
