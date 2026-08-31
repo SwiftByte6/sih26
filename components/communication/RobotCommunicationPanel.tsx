@@ -53,7 +53,7 @@ export const RobotCommunicationPanel: React.FC = () => {
     <div className="w-[280px] bg-panel border-l border-border flex flex-col flex-shrink-0">
       {/* Header */}
       <div className="h-[30px] border-b border-border flex items-center px-3 bg-app">
-        <span className="text-[11px] font-bold text-text tracking-wider">ROBOT COMMUNICATION</span>
+        <span className="text-[11px] font-bold text-text tracking-wider">COMMUNICATION FEED</span>
       </div>
 
       {/* Robot Status Strip */}

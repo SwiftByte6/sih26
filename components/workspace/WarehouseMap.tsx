@@ -61,8 +61,9 @@ export const WarehouseMap: React.FC = () => {
   const mapH = gridRows * cellSize;
 
   return (
-    <div ref={containerRef} className="w-full h-full">
-      <Stage
+    <div ref={containerRef} className="w-full h-full bg-transparent overflow-hidden">
+      {size.width > 0 && size.height > 0 && (
+        <Stage
         width={size.width}
         height={size.height}
         style={{ background: 'transparent' }}
@@ -185,6 +186,7 @@ export const WarehouseMap: React.FC = () => {
           })}
         </Layer>
       </Stage>
+      )}
     </div>
   );
 };

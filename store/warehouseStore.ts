@@ -25,7 +25,20 @@ import { useTaskStore } from './taskStore';
 import { snapAndClamp } from '../lib/coords';
 import { clampAllToGrid, cloneLayout, robotsForPlay, validateLayout, LayoutValidationIssue } from '../engine/validateLayout';
 
+import { useP2PStore } from './p2pStore';
+import { resolveTickCollisions } from '../engine/coordination/CollisionCoordinator';
+import { resolveLocationCoordinates } from '../engine/evaluation/TaskEvaluator';
+import { isWalkable } from '../engine/pathfinding';
+
 export type Task = { id: string, targetRow: number, targetCol: number, assignedTo: string | null };
+
+// --- P2P Simulation Globals ---
+export const announcedTaskIds = new Set<string>();
+export const announcedTaskTimestamps = new Map<string, number>();
+export const lastRobotTelemetry = new Map<string, any>();
+export const lastConflictTime = new Map<string, number>();
+export const blockedTicksMap = new Map<string, number>();
+export const taskAllocationRounds = new Map<string, number>();
 
 const MAX_MESSAGES = 200;
 const LAYOUT_KEY = 'amr-warehouse-layout';
@@ -180,9 +193,12 @@ interface WarehouseState {
   updateShelf: (id: string, updates: Partial<Shelf>) => void;
   removeShelf: (id: string) => void;
 
-  addRobot: (robot: Omit<Robot, 'id'>) => void;
+  addRobot: (robot: Partial<Robot> & { id?: string }) => void;
   updateRobot: (id: string, updates: Partial<Robot>) => void;
   removeRobot: (id: string) => void;
+
+  assignTaskToRobot: (robotId: string, task: any) => void;
+  removeAnnouncedTaskId: (taskId: string) => void;
 
   addPoi: (poi: Omit<PointOfInterest, 'id'>) => void;
   updatePoi: (id: string, updates: Partial<PointOfInterest>) => void;
@@ -221,7 +237,7 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
   viewMode: '2D',
   appMode: 'BUILDER',
   transformMode: 'translate',
-  pendingPlaceType: null, pendingAssetUrl: null,
+  pendingPlaceType: null,
   pendingAssetUrl: null,
   simSpeed: 1,
   showSensors: false,
@@ -402,19 +418,30 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
   })),
 
   addRobot: (robot) => set((state) => {
-    const nextId = nextPrefixedId('R', state.robots.map((r) => r.id));
-    const pos = clampMove(robot.row, robot.col, 1, 1, state);
+    const nextId = robot.id || nextPrefixedId('R', state.robots.map((r) => r.id));
+    const pos = clampMove(robot.row ?? 10, robot.col ?? 10, 1, 1, state);
     const created: Robot = {
       ...DEFAULT_TRANSFORM,
       ...robot,
       ...pos,
       id: nextId,
+      label: robot.label || nextId,
+      state: robot.state || 'IDLE',
+      battery: robot.battery ?? 100,
+      speed: robot.speed ?? 1.2,
       path: [],
-      state: 'WAITING',
       currentTask: null,
       currentTaskId: null,
       taskPhase: null,
-    };
+      pickupPoint: null,
+      dropPoint: null,
+      sensingRadius: robot.sensingRadius ?? 5,
+      payloadCapacity: robot.payloadCapacity ?? 20,
+      currentLoad: robot.currentLoad ?? 0,
+      temperature: robot.temperature ?? 35,
+      signalStrength: robot.signalStrength ?? 100,
+      deliveryCapability: robot.deliveryCapability ?? 'Standard Transport',
+    } as Robot;
     return {
       robots: [...state.robots, created],
       selectedItemId: nextId,
@@ -462,6 +489,26 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
       }),
     };
   }),
+
+  assignTaskToRobot: (robotId, task) => set((state) => ({
+    robots: state.robots.map((r) =>
+      r.id === robotId
+        ? {
+            ...r,
+            currentTask: task.pickup_point?.label ? `Pickup at ${task.pickup_point.label}` : 'Task Assigned',
+            currentTaskId: task.task_id,
+            taskPhase: 'TO_PICKUP',
+            pickupPoint: task.pickup_point,
+            dropPoint: task.drop_point,
+          }
+        : r
+    ),
+  })),
+  removeAnnouncedTaskId: (taskId: string) => {
+    announcedTaskIds.delete(taskId);
+    announcedTaskTimestamps.delete(taskId);
+  },
+
   removeRobot: (id) => set((state) => ({
     robots: state.robots.filter((r) => r.id !== id),
     selectedItemId: state.selectedItemId === id ? null : state.selectedItemId,
@@ -687,112 +734,174 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
   clearCommunications: () => set({ communications: [], activeCommLinks: [] }),
 
   tick: () => set((state) => {
+
     if (!state.isRunning) return state;
 
-    const taskStore = useTaskStore.getState();
     const now = Date.now();
+    const p2pStore = useP2PStore.getState();
+
+    // Process P2P Heartbeats & Peer Discovery in Simulated Network
+    p2pStore.processHeartbeats();
+
+    // Event / Change-Driven P2P STATUS_UPDATE broadcast:
+    // Broadcast ONLY when meaningful state, task, position (>= 5 cells), battery (>= 5%), or online status changes.
+    state.robots.forEach((robot) => {
+      const isOnline = robot.isOnline ?? true;
+      if (!isOnline) return;
+
+      const taskLabel = robot.currentTask || robot.currentTaskId || null;
+      const currentSnap = {
+        state: robot.state,
+        col: robot.col,
+        row: robot.row,
+        battery: Math.round(robot.battery),
+        task: taskLabel,
+        isOnline,
+      };
+
+      const prev = lastRobotTelemetry.get(robot.id);
+      if (!prev) {
+        // Initial snapshot registration (broadcast initial status once)
+        lastRobotTelemetry.set(robot.id, currentSnap);
+        p2pStore.broadcastMessage(robot.id, 'STATUS_UPDATE', {
+          robotId: robot.id,
+          position: { col: robot.col, row: robot.row },
+          status: robot.state,
+          battery: currentSnap.battery,
+          task: taskLabel,
+          speed: robot.speed,
+          body: `Initial Status: ${robot.state} | Pos (${robot.col},${robot.row}) | Batt: ${currentSnap.battery}%${taskLabel ? ` | Task: ${taskLabel}` : ''}`,
+        });
+        return;
+      }
+
+      // Check meaningful change conditions:
+      const stateChanged = prev.state !== currentSnap.state;
+      const taskChanged = prev.task !== currentSnap.task;
+      const onlineChanged = prev.isOnline !== currentSnap.isOnline;
+      const posDist = Math.abs(currentSnap.col - prev.col) + Math.abs(currentSnap.row - prev.row);
+      const posChangedMeaningfully = posDist >= 5;
+      const battChangedMeaningfully = Math.abs(currentSnap.battery - prev.battery) >= 5;
+
+      if (stateChanged || taskChanged || onlineChanged || posChangedMeaningfully || battChangedMeaningfully) {
+        lastRobotTelemetry.set(robot.id, currentSnap);
+
+        const changes: string[] = [];
+        if (stateChanged) changes.push(`State: ${prev.state} ΓåÆ ${currentSnap.state}`);
+        if (taskChanged) changes.push(`Task: ${prev.task || 'None'} ΓåÆ ${currentSnap.task || 'None'}`);
+        if (battChangedMeaningfully) changes.push(`Batt: ${prev.battery}% ΓåÆ ${currentSnap.battery}%`);
+        if (posChangedMeaningfully) changes.push(`Moved to (${currentSnap.col},${currentSnap.row})`);
+
+        p2pStore.broadcastMessage(robot.id, 'STATUS_UPDATE', {
+          robotId: robot.id,
+          position: { col: robot.col, row: robot.row },
+          status: robot.state,
+          battery: currentSnap.battery,
+          task: taskLabel,
+          speed: robot.speed,
+          body: `STATUS_UPDATE [${changes.join(' | ')}] Pos (${robot.col},${robot.row}) | Batt: ${currentSnap.battery}%`,
+        });
+      }
+    });
+
+    const taskStore = useTaskStore.getState();
+
+    // Assigned Task Execution Dispatcher:
+    // If a robot is WAITING/IDLE with no currentTask, check if there is an ASSIGNED task in taskStore for this robot.
+    // Immediately dispatch assignTaskToRobot so that assigned tasks execute sequentially without getting stranded!
+    state.robots.forEach((robot) => {
+      if ((robot.state === 'WAITING' || robot.state === 'IDLE') && !robot.currentTask && !robot.currentTaskId) {
+        const assignedTask = taskStore.tasks.find(
+          (t) => t.assigned_robot_id === robot.id && (t.status === 'ASSIGNED' || t.status === 'IN_PROGRESS')
+        );
+        if (assignedTask) {
+          useWarehouseStore.getState().assignTaskToRobot(robot.id, assignedTask);
+        }
+      }
+    });
+
+    const pendingTasks = taskStore.getPendingTasks();
+
+    // Announce the top unassigned pending task that has not been announced yet,
+    // or re-announce an unassigned pending task if 4+ seconds have elapsed.
+    // We announce 1 task at a time to allow the winner to transition to MOVING before the next task is announced.
+    const unassignedTasks = pendingTasks.filter((t) => t.status === 'PENDING' && t.assigned_robot_id === null);
+
+    let taskToAnnounce = unassignedTasks.find((t) => !announcedTaskIds.has(t.task_id));
+    if (!taskToAnnounce) {
+      taskToAnnounce = unassignedTasks.find((t) => {
+        const lastTime = announcedTaskTimestamps.get(t.task_id);
+        return !lastTime || (now - lastTime > 4000);
+      });
+    }
+
+    if (taskToAnnounce) {
+      announcedTaskIds.add(taskToAnnounce.task_id);
+      announcedTaskTimestamps.set(taskToAnnounce.task_id, now);
+      const currentRound = (taskAllocationRounds.get(taskToAnnounce.task_id) || 0) + 1;
+      taskAllocationRounds.set(taskToAnnounce.task_id, currentRound);
+
+      p2pStore.broadcastMessage('TASK_DISPATCH', 'TASK_ANNOUNCEMENT', {
+        taskId: taskToAnnounce.task_id,
+        task: taskToAnnounce,
+        allocationRound: currentRound,
+        pickupPoint: taskToAnnounce.pickup_point,
+        dropPoint: taskToAnnounce.drop_point,
+        weight: taskToAnnounce.weight,
+        priority: taskToAnnounce.priority,
+        requiredCapability: taskToAnnounce.requiredCapability,
+        requiredSensingRadius: taskToAnnounce.requiredSensingRadius,
+        body: `TASK_ANNOUNCEMENT: ${taskToAnnounce.task_id} [${taskToAnnounce.task_type}] Pickup: ${taskToAnnounce.pickup_point} -> Drop: ${taskToAnnounce.drop_point} (Weight: ${taskToAnnounce.weight}kg, Round ${currentRound})`,
+      });
+    }
+
     const newMessages: CommunicationMessage[] = [];
     const newLinks: ActiveCommLink[] = [];
+
+
     
     // Expire old visual links
     const activeLinks = state.activeCommLinks.filter(l => l.expires > now);
-
-    // 1. Conflict Resolution Phase (Pre-tick 2-step lookahead check)
-    let coordinatedRobots = state.robots.map(r => ({ ...r, path: [...r.path] }));
-    
-    // Resolve conflicts iteratively (max 5 passes)
-    for (let pass = 0; pass < 5; pass++) {
-      let conflictResolved = false;
-      
-      for (let i = 0; i < coordinatedRobots.length; i++) {
-        const r1 = coordinatedRobots[i];
-        if (r1.state !== 'MOVING' || r1.path.length === 0) continue;
-        
-        const next1 = r1.path[0];
-        const next1_2 = r1.path.length > 1 ? r1.path[1] : null;
-        
-        for (let j = i + 1; j < coordinatedRobots.length; j++) {
-          const r2 = coordinatedRobots[j];
-          if (r2.state !== 'MOVING' || r2.path.length === 0) continue;
-          
-          const next2 = r2.path[0];
-          const next2_2 = r2.path.length > 1 ? r2.path[1] : null;
-          
-          let hasConflict = false;
-          let conflictCell = null;
-          
-          // Case 1: Next cell overlap (Step 1)
-          if (next1.row === next2.row && next1.col === next2.col) {
-            hasConflict = true;
-            conflictCell = next1;
-          }
-          // Case 2: Step 2 overlap
-          else if (next1_2 && next2_2 && next1_2.row === next2_2.row && next1_2.col === next2_2.col) {
-            hasConflict = true;
-            conflictCell = next1_2;
-          }
-          // Case 3: Swap overlap (passing through each other)
-          else if (next1.row === r2.row && next1.col === r2.col && next2.row === r1.row && next2.col === r1.col) {
-            hasConflict = true;
-            conflictCell = next1;
-          }
-          
-          if (hasConflict && conflictCell) {
-            const r1Dist = r1.path.length;
-            const r2Dist = r2.path.length;
-            // Longer remaining path yields, tie-breaker is alphabetical ID
-            const r1Yields = r1Dist > r2Dist || (r1Dist === r2Dist && r1.id > r2.id);
-            
-            const yielder = r1Yields ? r1 : r2;
-            const target = yielder.path[yielder.path.length - 1];
-            
-            // Recalculate path for yielder, treating conflictCell as blocked
-            const tempObstacles = [
-              ...state.obstacles,
-              { row: conflictCell.row, col: conflictCell.col, width: 1, height: 1 }
-            ];
-            const tempState = { ...state, obstacles: tempObstacles };
-            const newPath = findPathAStar(tempState, yielder.row, yielder.col, target.row, target.col);
-            
-            if (newPath.length > 0) {
-              yielder.path = newPath;
-              newMessages.push(createMsg(yielder.id, 'ALL', `Conflict detected at (${conflictCell.row},${conflictCell.col}). Recalculating route...`, 'COORDINATION', 'WARNING'));
-            } else {
-              // No bypass route, must yield priority by waiting
-              yielder.path = [];
-              yielder.state = 'WAITING';
-              newMessages.push(createMsg(yielder.id, 'ALL', `Intersection conflict at (${conflictCell.row},${conflictCell.col}). No bypass, waiting.`, 'COORDINATION', 'IMPORTANT'));
-            }
-            
-            conflictResolved = true;
-            break;
-          }
-        }
-        if (conflictResolved) break;
-      }
-      if (!conflictResolved) break;
-    }
 
     const findLocationCoordinates = (locString: string): { row: number, col: number, label: string } | null => {
       const poi = state.pois.find(p => p.label.toLowerCase() === locString.toLowerCase() || p.id.toLowerCase() === locString.toLowerCase());
       if (poi) return { row: poi.row, col: poi.col, label: poi.label };
       
       const shelf = state.shelves.find(s => s.id.toLowerCase() === locString.toLowerCase() || locString.toLowerCase().includes(s.id.toLowerCase()));
+      // Return a coordinate just outside the shelf (e.g. row - 1) because the shelf itself is an obstacle
       if (shelf) return { row: shelf.row - 1, col: shelf.col, label: shelf.id };
       
       return null;
     };
 
-    // 2. Movement Phase (Execute movements using coordinated paths)
-    const updatedRobots = coordinatedRobots.map(robot => {
+    // Evaluate tick movement intents using deterministic CollisionCoordinator
+    const collisionResolution = resolveTickCollisions(state.robots, [...state.obstacles, ...(state.shelves || []), ...(state.pallets || [])] as any, taskStore.tasks, blockedTicksMap);
+
+    // Process yielding events for P2P messaging (throttled)
+    collisionResolution.yieldingEvents.forEach((evt) => {
+      const conflictKey = `${evt.yieldingRobotId}-${evt.priorityRobotId}`;
+      if (!lastConflictTime.has(conflictKey) || (now - (lastConflictTime.get(conflictKey) || 0) > 3000)) {
+        lastConflictTime.set(conflictKey, now);
+        p2pStore.sendDirectMessage(evt.yieldingRobotId, evt.priorityRobotId, 'TEXT', {
+          body: `YIELDING to ${evt.priorityRobotId}: ${evt.reason}`,
+        });
+        newLinks.push({ from: evt.yieldingRobotId, to: evt.priorityRobotId, expires: now + 2500 });
+      }
+    });
+
+    const updatedRobots = state.robots.map(robot => {
       // Robot is idle/waiting -> assign new task
-      if (robot.state === 'WAITING' || (robot.state !== 'MOVING' && robot.path.length === 0)) {
+      if (robot.state === 'WAITING' || (robot.state !== 'MOVING' && robot.state !== 'WAITING_FOR_PATH_CLEARANCE' && robot.path.length === 0)) {
         const pendingTasks = taskStore.getPendingTasks();
         let assignedTask = null;
         let pickupCoord = null;
         let dropCoord = null;
 
         for (const t of pendingTasks) {
+          // Bypass legacy random assignment for tasks participating in P2P decentralized allocation
+          if (announcedTaskIds.has(t.task_id)) {
+            continue;
+          }
           pickupCoord = findLocationCoordinates(t.pickup_point);
           dropCoord = findLocationCoordinates(t.drop_point);
           if (pickupCoord && dropCoord && t.assigned_robot_id === null) {
@@ -806,8 +915,8 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
           const newPath = findPathAStar(state, robot.row, robot.col, pickupCoord.row, pickupCoord.col);
           
           if (newPath.length > 0) {
-            newMessages.push(createMsg('SYSTEM', robot.id, `Task assigned: [${assignedTask.task_id}] Pickup at ${pickupCoord.label}`, 'TASK', 'NORMAL'));
-            newMessages.push(createMsg(robot.id, 'ALL', `Heading to pickup ${pickupCoord.label}`, 'NAVIGATION', 'NORMAL'));
+            p2pStore.sendDirectMessage('SYSTEM', robot.id, 'TEXT', { body: `Task assigned: [${assignedTask.task_id}] Pickup at ${pickupCoord.label}` });
+            p2pStore.broadcastMessage(robot.id, 'TEXT', { body: `Heading to pickup ${pickupCoord.label}` });
             newLinks.push({ from: robot.id, to: 'ALL', expires: now + 2000 });
             return { 
               ...robot, 
@@ -820,113 +929,126 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
               dropPoint: dropCoord
             };
           } else {
+            // Pathfinding failed, fail task
             taskStore.failTask(assignedTask.task_id, 'No path to pickup');
-            newMessages.push(createMsg(robot.id, 'SYSTEM', `Cannot find path to pickup ${pickupCoord.label}`, 'FAILURE', 'CRITICAL'));
+            p2pStore.sendDirectMessage(robot.id, 'SYSTEM', 'TEXT', { body: `Cannot find path to pickup ${pickupCoord.label}` });
           }
         }
       }
 
-      if (robot.state === 'MOVING' && robot.path.length > 0) {
-        const nextCell = robot.path[0];
-        
-        // Static obstacle check
-        const isBlocked = state.obstacles.some(o => 
-          nextCell.row >= o.row && nextCell.row < o.row + o.height && 
-          nextCell.col >= o.col && nextCell.col < o.col + o.width
-        );
+      if ((robot.state === 'MOVING' || robot.state === 'WAITING_FOR_PATH_CLEARANCE') && robot.path.length > 0) {
+        // Check if robot is blocked by collision coordinator
+        if (collisionResolution.blockedRobotIds.has(robot.id)) {
+          const blockInfo = collisionResolution.blockedRobotIds.get(robot.id);
+          return {
+            ...robot,
+            state: 'WAITING_FOR_PATH_CLEARANCE' as const,
+          };
+        }
 
-        if (isBlocked) {
-          newMessages.push(createMsg(robot.id, 'ALL', `Obstacle detected at (${nextCell.row},${nextCell.col}). Path blocked!`, 'OBSTACLE', 'WARNING'));
-          newLinks.push({ from: robot.id, to: 'ALL', expires: now + 3000 });
-          
-          const target = robot.path[robot.path.length - 1];
-          const newPath = findPathAStar(state, robot.row, robot.col, target.row, target.col);
-          if (newPath.length > 0) {
-            newMessages.push(createMsg(robot.id, 'ALL', `Recalculating route... New path confirmed`, 'NAVIGATION', 'IMPORTANT'));
-            return { ...robot, path: newPath };
-          } else {
-            newMessages.push(createMsg(robot.id, 'ALL', `No alternate route available. Waiting.`, 'OBSTACLE', 'CRITICAL'));
-            return { ...robot, state: 'WAITING' as const, path: [] };
+        // If unblocked and allowed, advance 1 cell along path
+        if (collisionResolution.allowedRobotIds.has(robot.id)) {
+          const nextCell = robot.path[0];
+
+          const approachingIntersection = state.intersections.find(i => i.row === nextCell.row && i.col === nextCell.col);
+          if (approachingIntersection) {
+            p2pStore.broadcastMessage(robot.id, 'TEXT', { body: `Approaching intersection ${approachingIntersection.id}` });
           }
-        }
-        
-        // Dynamic robot same-cell block (movement-time validation)
-        const conflictRobot = coordinatedRobots.find(r => r.id !== robot.id && r.row === nextCell.row && r.col === nextCell.col);
-        if (conflictRobot) {
-          newMessages.push(createMsg(robot.id, conflictRobot.id, `Collision risk at (${nextCell.row},${nextCell.col}). I'll wait.`, 'COORDINATION', 'WARNING'));
-          newLinks.push({ from: robot.id, to: conflictRobot.id, expires: now + 2500 });
-          return robot;
-        }
 
-        const approachingIntersection = state.intersections.find(i => i.row === nextCell.row && i.col === nextCell.col);
-        if (approachingIntersection) {
-          newMessages.push(createMsg(robot.id, 'ALL', `Approaching intersection ${approachingIntersection.id}`, 'COORDINATION', 'NORMAL'));
-        }
-
-        const remainingPath = robot.path.slice(1);
-        let newState: RobotState = 'MOVING';
-        let newTaskPhase: 'TO_PICKUP' | 'TO_DROP' | null = robot.taskPhase || null;
-        let newCurrentTaskId: string | null = robot.currentTaskId || null;
-        let newPath = remainingPath;
-        
-        if (remainingPath.length === 0) {
-          if (robot.taskPhase === 'TO_PICKUP' && robot.currentTaskId && robot.dropPoint) {
-            taskStore.startTask(robot.currentTaskId);
-            newMessages.push(createMsg(robot.id, 'ALL', `Picked up item. Heading to ${robot.dropPoint.label}`, 'TASK', 'NORMAL'));
-            newPath = findPathAStar(state, nextCell.row, nextCell.col, robot.dropPoint.row, robot.dropPoint.col);
-            newTaskPhase = 'TO_DROP';
-            if (newPath.length === 0) {
-              taskStore.failTask(robot.currentTaskId, 'No path to drop');
+          // Move to next cell
+          const remainingPath = robot.path.slice(1);
+          let newState: RobotState = 'MOVING';
+          let newTaskPhase: 'TO_PICKUP' | 'TO_DROP' | null = robot.taskPhase || null;
+          let newCurrentTaskId: string | null = robot.currentTaskId || null;
+          let newPath = remainingPath;
+          
+          if (remainingPath.length === 0) {
+            if (robot.taskPhase === 'TO_PICKUP' && robot.currentTaskId && robot.dropPoint) {
+              // Reached pickup, start going to drop
+              taskStore.startTask(robot.currentTaskId);
+              p2pStore.broadcastMessage(robot.id, 'TEXT', { body: `Picked up item. Heading to ${robot.dropPoint.label}` });
+              newPath = findPathAStar(state, nextCell.row, nextCell.col, robot.dropPoint.row, robot.dropPoint.col);
+              newTaskPhase = 'TO_DROP';
+              if (newPath.length === 0) {
+                taskStore.failTask(robot.currentTaskId, 'No path to drop');
+                newState = 'WAITING';
+                newTaskPhase = null;
+                newCurrentTaskId = null;
+              }
+            } else if (robot.taskPhase === 'TO_DROP' && robot.currentTaskId) {
+              // Reached drop, task complete
+              taskStore.completeTask(robot.currentTaskId);
+              p2pStore.broadcastMessage(robot.id, 'TEXT', { body: `Task [${robot.currentTaskId}] completed at ${robot.dropPoint?.label}.` });
+              newLinks.push({ from: robot.id, to: 'ALL', expires: now + 2000 });
               newState = 'WAITING';
               newTaskPhase = null;
               newCurrentTaskId = null;
+            } else {
+              // Just reached a point, no active task phase
+              newState = 'WAITING';
             }
-          } else if (robot.taskPhase === 'TO_DROP' && robot.currentTaskId) {
-            taskStore.completeTask(robot.currentTaskId);
-            newMessages.push(createMsg(robot.id, 'ALL', `Task [${robot.currentTaskId}] completed at ${robot.dropPoint?.label}.`, 'TASK', 'NORMAL'));
-            newLinks.push({ from: robot.id, to: 'ALL', expires: now + 2000 });
-            newState = 'WAITING';
-            newTaskPhase = null;
-            newCurrentTaskId = null;
-          } else {
-            newState = 'WAITING';
+
+            if (newState === 'WAITING') {
+              unassignedTasks.forEach((pt) => {
+                announcedTaskIds.delete(pt.task_id);
+                announcedTaskTimestamps.delete(pt.task_id);
+              });
+            }
           }
+          
+          // Battery warning & Phase 7 Dynamic Handover Trigger
+          const newBattery = robot.battery - 0.3;
+          if (newBattery <= 20 && robot.battery > 20) {
+            p2pStore.broadcastMessage(robot.id, 'TEXT', { body: `Battery at ${Math.round(newBattery)}%. Requesting charger & task handover.` });
+            if (robot.currentTask || robot.currentTaskId) {
+              try {
+                const requestTaskHandover = require('../engine/recovery/TaskHandoverManager').requestTaskHandover;
+                requestTaskHandover(robot.id, 'CRITICAL_BATTERY');
+              } catch (e) {}
+            }
+          }
+          
+          return {
+            ...robot,
+            col: nextCell.col,
+            row: nextCell.row,
+            path: newPath,
+            state: newState,
+            taskPhase: newTaskPhase,
+            currentTaskId: newCurrentTaskId,
+            currentTask: newCurrentTaskId ? newCurrentTaskId : null,
+            battery: Math.max(0, newBattery)
+          };
         }
-        
-        const newBattery = robot.battery - 0.3;
-        if (newBattery <= 20 && robot.battery > 20) {
-          newMessages.push(createMsg(robot.id, 'ALL', `Battery at ${Math.round(newBattery)}%. Requesting charger.`, 'BATTERY', 'WARNING'));
+      }
+
+      if (robot.state === 'CHARGING') {
+        const newBattery = Math.min(100, robot.battery + 1.0);
+        if (newBattery >= 100) {
+          p2pStore.broadcastMessage(robot.id, 'STATUS_UPDATE', {
+            robotId: robot.id,
+            status: 'WAITING',
+            battery: 100,
+            body: `CHARGING complete (100%). Transitioning to WAITING.`,
+          });
+          return {
+            ...robot,
+            battery: 100,
+            state: 'WAITING' as const,
+          };
         }
-        
         return {
           ...robot,
-          col: nextCell.col,
-          row: nextCell.row,
-          path: newPath,
-          state: newState,
-          taskPhase: newTaskPhase,
-          currentTaskId: newCurrentTaskId,
-          currentTask: newCurrentTaskId ? newCurrentTaskId : null,
-          battery: Math.max(0, newBattery)
+          battery: newBattery,
         };
       }
+
       return robot;
     });
 
-    // 3. Post-tick Actual Collision Verification (Double occupying cells)
-    let actualCollisions = 0;
-    for (let i = 0; i < updatedRobots.length; i++) {
-      for (let j = i + 1; j < updatedRobots.length; j++) {
-        const r1 = updatedRobots[i];
-        const r2 = updatedRobots[j];
-        if (r1.row === r2.row && r1.col === r2.col) {
-          actualCollisions++;
-          newMessages.push(createMsg('SYSTEM', 'ALL', `COLLISION ALERT: Robots ${r1.id} & ${r2.id} overlapped at grid cell (${r1.row}, ${r1.col})!`, 'FAILURE', 'CRITICAL'));
-        }
-      }
-    }
-
-    const allComms = [...state.communications, ...newMessages];
+    // Trim communications to MAX_MESSAGES
+    const currentComms = get().communications;
+    const allComms = [...currentComms, ...newMessages];
     if (allComms.length > MAX_MESSAGES) {
       allComms.splice(0, allComms.length - MAX_MESSAGES);
     }
@@ -935,7 +1057,8 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
       robots: updatedRobots, 
       communications: allComms,
       activeCommLinks: [...activeLinks, ...newLinks],
-      collisionsCount: state.collisionsCount + actualCollisions
+      collisionsCount: state.collisionsCount
     };
   }),
+
 }));
