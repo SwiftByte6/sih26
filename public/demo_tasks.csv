@@ -1,0 +1,6 @@
+Task Type,Source,Target,Priority,Weight
+DELIVER ITEM,Storage-01,Packing Area B,URGENT,15
+RESTOCK SHELF,Receiving Dock,Storage-02,NORMAL,20
+TAKE TO PACKING,S1,Packing Area B,LOW,5
+STORE ITEM,Intake,S3,NORMAL,10
+MOVE CONTAINER,Dock A,Dock B,URGENT,50

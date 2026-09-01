@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { useWarehouseStore } from '../../store/warehouseStore';
+import { useP2PStore } from '../../store/p2pStore';
 import { simulationToWorld } from '../../lib/coords';
 import { ObjectTransform } from '../../types/warehouse';
 
@@ -34,6 +35,7 @@ function Num({
 }
 
 export const InspectorPanel: React.FC = () => {
+  const p2pNodes = useP2PStore((state) => state.nodes);
   const selectedItemId = useWarehouseStore((s) => s.selectedItemId);
   const selectedItemType = useWarehouseStore((s) => s.selectedItemType);
   const robots = useWarehouseStore((s) => s.robots);
@@ -58,6 +60,7 @@ export const InspectorPanel: React.FC = () => {
   const updatePoi = useWarehouseStore((s) => s.updatePoi);
   const updateRobot = useWarehouseStore((s) => s.updateRobot);
   const deleteSelected = useWarehouseStore((s) => s.deleteSelected);
+  const duplicateSelected = useWarehouseStore((s) => s.duplicateSelected);
 
   const selectedRobot = selectedItemType === 'ROBOT' ? robots.find((r) => r.id === selectedItemId) : null;
   const selectedObstacle = selectedItemType === 'OBSTACLE' ? obstacles.find((o) => o.id === selectedItemId) : null;
@@ -128,6 +131,9 @@ export const InspectorPanel: React.FC = () => {
     );
   };
 
+  const p2pNode = selectedRobot ? p2pNodes[selectedRobot.id] : null;
+  const nodeId = p2pNode ? p2pNode.nodeId : `amr-node-${selectedRobot?.id.toLowerCase()}`;
+
   return (
     <div className="w-[240px] bg-panel border-l border-border flex flex-col flex-shrink-0">
       <div className="h-[30px] border-b border-border flex items-center px-3 bg-app">
@@ -183,7 +189,8 @@ export const InspectorPanel: React.FC = () => {
             <div>
               <div className="text-[10px] text-muted font-semibold mb-1">Selected Object</div>
               <div className="font-bold text-[14px]">ROBOT</div>
-              <div className="font-mono mt-1">ID: {selectedRobot.id}</div>
+              <div className="font-mono mt-1 font-bold">ID: {selectedRobot.id}</div>
+              <div className="font-mono text-[11px] text-muted">Node ID: {nodeId}</div>
             </div>
             <div>
               <div className="text-[10px] text-muted font-semibold mb-1">Status</div>
@@ -204,6 +211,33 @@ export const InspectorPanel: React.FC = () => {
             <div>
               <div className="text-[10px] text-muted font-semibold mb-1">Current Task</div>
               <div className="font-mono bg-workspace p-1.5 border border-border rounded-sm">{selectedRobot.currentTask || 'None'}</div>
+            </div>
+            <div>
+              <div className="text-[10px] text-muted font-semibold mb-1">Hardware Capabilities</div>
+              <div className="flex flex-col gap-1 text-[11px] font-mono bg-workspace p-2 border border-border rounded-sm">
+                <div>Capability: <span className="font-bold">{selectedRobot.deliveryCapability || 'Standard Transport'}</span></div>
+                <div>Payload Cap: {selectedRobot.payloadCapacity ?? 20} kg</div>
+                <div>Current Load: {selectedRobot.currentLoad ?? 0} kg</div>
+                <div>Sensing Radius: {selectedRobot.sensingRadius ?? 5} m</div>
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[10px] text-muted font-semibold mb-1">P2P Connection & Telemetry</div>
+              <div className="flex flex-col gap-1 text-[11px] font-mono bg-workspace p-2 border border-border rounded-sm">
+                <div className="flex justify-between">
+                  <span>Connection:</span>
+                  <span className="font-bold text-success">CONNECTED</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Signal:</span>
+                  <span>{selectedRobot.signalStrength ?? 95}%</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Temp:</span>
+                  <span>{selectedRobot.temperature ?? 36}°C</span>
+                </div>
+              </div>
             </div>
             {transformFields('ROBOT', selectedRobot.id, selectedRobot.row, selectedRobot.col, 1, 1, selectedRobot)}
           </div>
@@ -258,9 +292,14 @@ export const InspectorPanel: React.FC = () => {
         )}
 
         {builder && selectedItemId && selectedItemType && selectedItemType !== 'FLOOR' && selectedItemType !== 'WALL' && (
-          <button onClick={deleteSelected} className="px-4 py-1.5 bg-danger text-white rounded-sm hover:bg-opacity-80 font-medium w-full transition-colors">
-            Delete
-          </button>
+          <div className="flex gap-2 w-full mt-4">
+            <button onClick={duplicateSelected} className="px-4 py-1.5 bg-workspace border border-border text-text rounded-sm hover:bg-opacity-80 font-medium w-full transition-colors">
+              Duplicate
+            </button>
+            <button onClick={deleteSelected} className="px-4 py-1.5 bg-danger text-white rounded-sm hover:bg-opacity-80 font-medium w-full transition-colors">
+              Delete
+            </button>
+          </div>
         )}
       </div>
     </div>

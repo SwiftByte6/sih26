@@ -15,11 +15,15 @@ export const SimulationControls: React.FC = () => {
   const simSpeed = useWarehouseStore((s) => s.simSpeed);
   const setSimSpeed = useWarehouseStore((s) => s.setSimSpeed);
   const robots = useWarehouseStore((s) => s.robots);
+  const collisionsCount = useWarehouseStore((s) => s.collisionsCount);
   const tasks = useTaskStore((s) => s.tasks);
 
   const play = appMode === 'PLAY';
-  const active = robots.filter((r) => r.state === 'MOVING').length;
-  const completed = tasks.filter((t) => t.status === 'COMPLETED').length;
+  const activeRobots = robots.filter((r) => r.state === 'MOVING').length;
+  const completedTasks = tasks.filter((t) => t.status === 'COMPLETED').length;
+  const totalRobots = robots.length;
+  const totalTasks = tasks.length;
+  const efficiency = totalTasks > 0 ? `+${Math.round((completedTasks / totalTasks) * 100)}%` : '0%';
 
   return (
     <div className="h-[36px] bg-toolbar border-t border-border flex items-center justify-between px-4">
@@ -35,7 +39,6 @@ export const SimulationControls: React.FC = () => {
         <button
           className="flex items-center gap-1 px-3 py-1 bg-app text-text border border-border rounded-sm text-[11px] font-medium hover:bg-toolbar disabled:opacity-40"
           onClick={pauseSimulation}
-          disabled={!play}
         >
           <Pause size={12} className="fill-current" /> PAUSE
         </button>
@@ -53,7 +56,7 @@ export const SimulationControls: React.FC = () => {
         {([0.5, 1, 2, 4] as const).map((spd) => (
           <button
             key={spd}
-            onClick={() => setSimSpeed(spd)}
+            onClick={() => setSimSpeed && setSimSpeed(spd)}
             className={`px-1.5 py-0.5 text-[10px] font-mono rounded-sm border ${
               simSpeed === spd ? 'bg-accent text-white border-accent' : 'border-border text-muted'
             }`}
@@ -69,21 +72,22 @@ export const SimulationControls: React.FC = () => {
           <span className="text-muted">Mode:</span> {appMode}
         </div>
         <div className="w-px h-3 bg-border" />
-        <div className="flex items-center gap-1">
-          <span className="text-muted">Robots:</span> {robots.length}
-        </div>
+        <div className="flex items-center gap-1"><span className="text-muted">Robots:</span> {totalRobots}</div>
+        <div className="w-px h-3 bg-border" />
+        <div className="flex items-center gap-1"><span className="text-muted">Active:</span> {activeRobots}</div>
+        <div className="w-px h-3 bg-border" />
+        <div className="flex items-center gap-1"><span className="text-muted">Tasks:</span> {totalTasks}</div>
+        <div className="w-px h-3 bg-border" />
+        <div className="flex items-center gap-1"><span className="text-muted">Completed:</span> {completedTasks}</div>
         <div className="w-px h-3 bg-border" />
         <div className="flex items-center gap-1">
-          <span className="text-muted">Active:</span> {active}
+          <span className="text-muted">Collisions:</span>{' '}
+          <span className={collisionsCount > 0 ? 'text-danger font-bold animate-pulse' : 'text-success'}>
+            {collisionsCount}
+          </span>
         </div>
         <div className="w-px h-3 bg-border" />
-        <div className="flex items-center gap-1">
-          <span className="text-muted">Tasks:</span> {tasks.length}
-        </div>
-        <div className="w-px h-3 bg-border" />
-        <div className="flex items-center gap-1">
-          <span className="text-muted">Completed:</span> {completed}
-        </div>
+        <div className="flex items-center gap-1"><span className="text-muted">Efficiency:</span> <span className="text-success">{efficiency}</span></div>
       </div>
     </div>
   );

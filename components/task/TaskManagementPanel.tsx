@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Plus,
   Upload,
@@ -14,22 +14,27 @@ import {
   Bot,
   Filter,
   ArrowUpDown,
+  Trash2,
+  AlertCircle,
 } from 'lucide-react';
 import { useTaskStore } from '../../store/taskStore';
+import { useWarehouseStore } from '../../store/warehouseStore';
 import { AddTaskModal } from './AddTaskModal';
 import { UploadTaskListModal } from './UploadTaskListModal';
-import { TaskStatus, TaskPriority } from '../../types/task';
+import { TaskStatus, TaskPriority, Task } from '../../types/task';
 
 export const TaskManagementPanel: React.FC = () => {
   const {
     tasks,
     updatePriority,
+    deleteTask,
     saveTasks,
     loadTasks,
   } = useTaskStore();
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -284,7 +289,7 @@ export const TaskManagementPanel: React.FC = () => {
         </div>
       </div>
 
-      {/* Master Task Table Container - Exactly 8 Columns */}
+      {/* Master Task Table Container - 9 Columns */}
       <div className="flex-1 overflow-auto p-4">
         <div className="bg-white border border-border rounded shadow-sm overflow-hidden">
           <table className="w-full text-left border-collapse text-[12px]">
@@ -297,60 +302,203 @@ export const TaskManagementPanel: React.FC = () => {
                 <th className="p-3 border-r border-border">PRIORITY</th>
                 <th className="p-3 border-r border-border">WEIGHT</th>
                 <th className="p-3 border-r border-border">STATUS</th>
-                <th className="p-3">ASSIGNED AMR</th>
+                <th className="p-3 border-r border-border">ASSIGNED AMR</th>
+                <th className="p-3 text-center">ACTIONS</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {filteredTasks.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="p-8 text-center text-muted">
+                  <td colSpan={9} className="p-8 text-center text-muted">
                     No tasks found. Click <strong>+ Add Task</strong> or <strong>Upload Task List</strong> to get started.
                   </td>
                 </tr>
               ) : (
-                filteredTasks.map((t) => (
-                  <tr key={t.task_id} className="hover:bg-workspace/80 transition-colors">
-                    <td className="p-3 font-bold text-accent border-r border-border font-mono">{t.task_id}</td>
-                    <td className="p-3 border-r border-border font-medium">
-                      {t.task_type.replace(/_/g, ' ')}
-                    </td>
-                    <td className="p-3 border-r border-border font-semibold text-text">{t.pickup_point}</td>
-                    <td className="p-3 border-r border-border font-semibold text-text">{t.drop_point}</td>
-                    <td className="p-3 border-r border-border">
-                      <div className="flex items-center gap-1.5">
-                        {renderPriorityBadge(t)}
-                        {t.status === 'PENDING' && (
-                          <select
-                            value={t.priority}
-                            onChange={(e) => updatePriority(t.task_id, e.target.value as TaskPriority)}
-                            className="text-[10px] bg-workspace border border-border rounded px-1 py-0.5 focus:outline-none focus:border-accent text-text ml-1"
-                            title="Change priority (recalculates pending execution sequence)"
-                          >
-                            <option value="URGENT">URGENT</option>
-                            <option value="LOW">LOW</option>
-                            <option value="NORMAL">NORMAL</option>
-                          </select>
+                filteredTasks.map((t) => {
+                  const canDelete = t.status === 'PENDING' && t.assigned_robot_id === null && !t.started_time;
+
+                  return (
+                    <tr key={t.task_id} className="hover:bg-workspace/80 transition-colors">
+                      <td className="p-3 font-bold text-accent border-r border-border font-mono">{t.task_id}</td>
+                      <td className="p-3 border-r border-border font-medium">
+                        {t.task_type.replace(/_/g, ' ')}
+                      </td>
+                      <td className="p-3 border-r border-border font-semibold text-text">{t.pickup_point}</td>
+                      <td className="p-3 border-r border-border font-semibold text-text">{t.drop_point}</td>
+                      <td className="p-3 border-r border-border">
+                        <div className="flex items-center gap-1.5">
+                          {renderPriorityBadge(t)}
+                          {t.deliveryComplexity && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-purple-100 text-purple-900 border border-purple-300">
+                              {t.deliveryComplexity}
+                            </span>
+                          )}
+                          {t.status === 'PENDING' && (
+                            <select
+                              value={t.priority}
+                              onChange={(e) => updatePriority(t.task_id, e.target.value as TaskPriority)}
+                              className="text-[10px] bg-workspace border border-border rounded px-1 py-0.5 focus:outline-none focus:border-accent text-text ml-1"
+                              title="Change priority (recalculates pending execution sequence)"
+                            >
+                              <option value="URGENT">URGENT</option>
+                              <option value="LOW">LOW</option>
+                              <option value="NORMAL">NORMAL</option>
+                            </select>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-3 border-r border-border font-mono">{t.weight || 0} kg</td>
+                      <td className="p-3 border-r border-border">
+                        <div className="flex items-center gap-2">
+                          {renderStatusBadge(t.status)}
+                          {(t.status === 'COMPLETED' || t.status === 'FAILED') && (
+                            <button 
+                              onClick={() => {
+                                const redoTask = useTaskStore.getState().redoTask;
+                                if (redoTask) redoTask(t.task_id);
+                              }} 
+                              className="p-1 hover:bg-workspace border border-transparent hover:border-border rounded text-muted hover:text-text transition-colors" 
+                              title="Redo Task"
+                            >
+                              <RotateCcw size={12} />
+                            </button>
+                          )}
+                        </div>
+                        {t.status === 'PENDING' && t.priority === 'URGENT' && (
+                          (() => {
+                            const warehouseRobots = useWarehouseStore.getState().robots;
+                            const freeCount = warehouseRobots.filter((r) => (r.state === 'WAITING' || r.state === 'IDLE') && !r.currentTask && r.isOnline !== false).length;
+                            if (freeCount === 0) {
+                              return (
+                                <div className="mt-1.5 px-2 py-0.5 bg-amber-600 text-white rounded text-[9.5px] font-bold tracking-wide uppercase font-mono animate-pulse w-fit border border-amber-700 shadow-sm">
+                                  URGENT — WAITING FOR AMR
+                                </div>
+                              );
+                            }
+                            return null;
+                          })()
                         )}
-                      </div>
-                    </td>
-                    <td className="p-3 border-r border-border font-mono">{t.weight} kg</td>
-                    <td className="p-3 border-r border-border">{renderStatusBadge(t.status)}</td>
-                    <td className="p-3 font-semibold font-mono">
-                      {t.assigned_robot_id ? (
-                        <span className="px-2 py-0.5 rounded bg-app border border-border text-text flex items-center gap-1 w-fit">
-                          🤖 {t.assigned_robot_id}
-                        </span>
-                      ) : (
-                        <span className="text-muted font-normal italic">— Unassigned</span>
-                      )}
-                    </td>
-                  </tr>
-                ))
+                        {t.handoverAudit && (
+                          <div className="mt-1.5 p-1.5 bg-blue-50 border border-blue-300 text-blue-950 rounded text-[10px] font-mono leading-tight max-w-[280px]">
+                            <span className="font-bold uppercase tracking-wider text-[9px] text-blue-900 block mb-0.5">🤝 Dyn Handover ({t.handoverAudit.handoverReason}):</span>
+                            {t.handoverAudit.originalRobotId} → {t.handoverAudit.replacementRobotId || 'HANDING OVER...'}
+                          </div>
+                        )}
+                        {t.recoveryAudit && (
+                          <div className="mt-1.5 p-1.5 bg-amber-50 border border-amber-300 text-amber-950 rounded text-[10px] font-mono leading-tight max-w-[280px]">
+                            <span className="font-bold uppercase tracking-wider text-[9px] text-amber-900 block mb-0.5">🔄 Decen Recovery:</span>
+                            {t.recoveryAudit.failedRobotId} FAILED → {t.recoveryAudit.recoveredRobotId || 'RECOVERING...'}
+                          </div>
+                        )}
+                        {t.status === 'FAILED' && t.failure_reason && (
+                          <div className="mt-1.5 p-1.5 bg-rose-100 border border-rose-300 text-rose-950 rounded text-[10px] font-mono leading-tight max-w-[280px]">
+                            <span className="font-bold uppercase tracking-wider text-[9px] text-rose-900 block mb-0.5">⚠️ Failure Reason:</span>
+                            {t.failure_reason}
+                          </div>
+                        )}
+                        {t.status === 'PENDING' && t.ineligibilityAudit && Object.keys(t.ineligibilityAudit).length > 0 && (
+                          <div className="mt-1.5 p-1.5 bg-rose-50 border border-rose-200 text-rose-900 rounded text-[10px] font-mono flex flex-col gap-0.5 max-w-[280px]">
+                            <div className="font-bold text-[9px] uppercase tracking-wider text-rose-800 flex items-center gap-1">
+                              <span>⚠️ Fleet Non-Bidding Reasons:</span>
+                            </div>
+                            {Object.entries(t.ineligibilityAudit).map(([rId, reasons]) => (
+                              <div key={rId} className="leading-tight text-[9.5px]">
+                                <span className="font-bold text-rose-950">{rId}:</span> {reasons.join(', ')}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                      <td className="p-3 font-semibold font-mono">
+                        {t.assigned_robot_id ? (
+                          <span className="px-2 py-0.5 rounded bg-app border border-border text-text flex items-center gap-1 w-fit">
+                            🤖 {t.assigned_robot_id}
+                          </span>
+                        ) : (
+                          <span className="text-muted font-normal italic">— Unassigned</span>
+                        )}
+                      </td>
+                      <td className="p-3 text-center">
+                        <button
+                          onClick={() => canDelete && setTaskToDelete(t)}
+                          disabled={!canDelete}
+                          className={`p-1.5 rounded transition-colors ${
+                            canDelete
+                              ? 'text-danger hover:bg-danger/10 border border-danger/30 cursor-pointer'
+                              : 'text-muted/40 bg-workspace border border-border cursor-not-allowed opacity-40'
+                          }`}
+                          title={canDelete ? `Delete Task ${t.task_id}` : 'Started or assigned tasks cannot be deleted'}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* Delete Task Confirmation Modal */}
+      {taskToDelete && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-workspace border border-border rounded-lg shadow-xl max-w-md w-full p-5 flex flex-col gap-4 text-text animate-in fade-in">
+            <div className="flex items-center gap-2 text-danger border-b border-border pb-3">
+              <AlertCircle size={20} />
+              <h3 className="font-bold text-base">Delete this task?</h3>
+            </div>
+
+            <div className="bg-app border border-border rounded p-3 flex flex-col gap-2 font-mono text-xs">
+              <div className="flex justify-between">
+                <span className="text-muted">Task ID:</span>
+                <span className="font-bold text-accent">{taskToDelete.task_id}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted">Pickup:</span>
+                <span className="font-bold">{taskToDelete.pickup_point}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted">Drop:</span>
+                <span className="font-bold">{taskToDelete.drop_point}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted">Priority:</span>
+                <span className="font-bold">{taskToDelete.priority}</span>
+              </div>
+            </div>
+
+            <div className="text-[11px] text-muted leading-relaxed">
+              Are you sure you want to delete task <strong>{taskToDelete.task_id}</strong>? This action will remove it from the task queue and P2P agent memory.
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-border">
+              <button
+                onClick={() => setTaskToDelete(null)}
+                className="px-3 py-1.5 bg-app border border-border rounded text-xs font-medium hover:bg-workspace transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const res = deleteTask(taskToDelete.task_id);
+                  if (res.success) {
+                    setFeedbackMsg({ type: 'success', text: `Task ${taskToDelete.task_id} deleted.` });
+                  } else {
+                    setFeedbackMsg({ type: 'error', text: res.error || 'Started or assigned tasks cannot be deleted.' });
+                  }
+                  setTaskToDelete(null);
+                  setTimeout(() => setFeedbackMsg(null), 3000);
+                }}
+                className="px-3 py-1.5 bg-danger text-white rounded text-xs font-bold hover:bg-opacity-90 transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modals */}
       <AddTaskModal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} />

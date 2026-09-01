@@ -23,8 +23,8 @@ export const MenuBar: React.FC = () => {
         ))}
       </div>
 
-      {/* Smallest possible tab navigation addition */}
-      <div className="flex items-center bg-app rounded p-0.5 border border-border mr-2">
+      {/* Navigation View Switcher */}
+      <div className="flex items-center bg-app rounded p-0.5 border border-border mr-2 gap-1">
         <button
           onClick={() => setActiveView('WAREHOUSE')}
           className={`px-2.5 py-0.5 text-[11px] font-semibold rounded-sm transition-colors ${
@@ -41,9 +41,18 @@ export const MenuBar: React.FC = () => {
         >
           Task Management
         </button>
+        <button
+          onClick={() => setActiveView('ROBOTS')}
+          className={`px-2.5 py-0.5 text-[11px] font-semibold rounded-sm transition-colors ${
+            activeView === 'ROBOTS' ? 'bg-accent text-white shadow-sm' : 'text-muted hover:text-text'
+          }`}
+        >
+          Robot Fleet
+        </button>
       </div>
     </div>
   );
 };
+
 
 

@@ -66,6 +66,7 @@ export type Shelf = GridOccupant &
 export type Obstacle = GridOccupant &
   Partial<ObjectTransform> & {
     id: string;
+    assetUrl?: string;
   };
 
 export type Intersection = {
@@ -88,7 +89,7 @@ export type PointOfInterest = {
   label: string;
 } & Partial<ObjectTransform>;
 
-export type RobotState = 'IDLE' | 'MOVING' | 'CHARGING' | 'ERROR' | 'WAITING';
+export type RobotState = 'IDLE' | 'MOVING' | 'CHARGING' | 'ERROR' | 'WAITING' | 'WAITING_FOR_PATH_CLEARANCE';
 
 export type Robot = {
   id: string;
@@ -104,6 +105,16 @@ export type Robot = {
   pickupPoint?: { row: number, col: number, label: string } | null;
   dropPoint?: { row: number, col: number, label: string } | null;
   path: {row: number, col: number}[];
+  // Hardware Telemetry & Capability (Phase 2)
+  sensingRadius?: number;       // in meters
+  payloadCapacity?: number;     // in kg
+  currentLoad?: number;         // in kg
+  temperature?: number;         // in °C
+  signalStrength?: number;      // in %
+  deliveryCapability?: string;  // e.g. "Standard Transport"
+  isOnline?: boolean;
+  failureStatus?: 'NORMAL' | 'OFFLINE' | 'ERROR' | 'COMMUNICATION_LOST';
+  recoveryStatus?: 'NONE' | 'RECOVERY_IN_PROGRESS' | 'RECOVERED';
 } & Partial<ObjectTransform>;
 
 export type LayoutSnapshot = {
@@ -118,6 +129,7 @@ export type LayoutSnapshot = {
   intersections: Intersection[];
   paths: Path[];
 };
+
 
 export type CommPriority = 'NORMAL' | 'IMPORTANT' | 'WARNING' | 'CRITICAL';
 export type CommCategory = 'NAVIGATION' | 'TASK' | 'COORDINATION' | 'SAFETY' | 'OBSTACLE' | 'BATTERY' | 'FAILURE' | 'RECOVERY' | 'SYSTEM';

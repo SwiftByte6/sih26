@@ -19,7 +19,8 @@ export const GltfModel: React.FC<Props> = ({
   extraScale = [1, 1, 1],
   castShadow = true,
 }) => {
-  const { scene } = useGLTF(url);
+  const gltf = useGLTF(url) as any;
+  const scene = gltf.scene;
   const clone = useMemo(() => scene.clone(true), [scene]);
 
   const fit = useMemo(() => {

@@ -72,7 +72,7 @@ export const WarehouseWorkspace: React.FC = () => {
     setDragPreview(null);
   };
 
-  const dropToCell = (e: React.DragEvent, type: PlaceableType) => {
+  const dropToCell = (e: React.DragEvent, type: PlaceableType, assetUrl?: string) => {
     if (!mapContainerRef.current) return;
     const rect = mapContainerRef.current.getBoundingClientRect();
     const pointerX = e.clientX - rect.left;
@@ -80,23 +80,24 @@ export const WarehouseWorkspace: React.FC = () => {
     if (pointerX < 0 || pointerY < 0 || pointerX > rect.width || pointerY > rect.height) return;
     const { cellSize, viewMode: vm } = useWarehouseStore.getState();
     if (vm === '3D') {
-      placeAtCell(type, 10, 10);
+      placeAtCell(type, 10, 10, assetUrl);
       return;
     }
     const worldX = (pointerX - pan.x) / scale;
     const worldY = (pointerY - pan.y) / scale;
     const col = Math.round(worldX / cellSize);
     const row = Math.round(worldY / cellSize);
-    placeAtCell(type, row, col);
+    placeAtCell(type, row, col, assetUrl);
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragPreview(null);
     const type = e.dataTransfer.getData('application/amr-type') as PlaceableType | 'OBSTACLE';
+    const assetUrl = e.dataTransfer.getData('application/amr-asset-url');
     if (!type) return;
     if (appMode !== 'BUILDER') return;
-    dropToCell(e, type as PlaceableType);
+    dropToCell(e, type as PlaceableType, assetUrl);
   };
 
   return (

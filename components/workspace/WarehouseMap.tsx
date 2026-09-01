@@ -61,8 +61,9 @@ export const WarehouseMap: React.FC = () => {
   const mapH = gridRows * cellSize;
 
   return (
-    <div ref={containerRef} className="w-full h-full">
-      <Stage
+    <div ref={containerRef} className="w-full h-full bg-transparent overflow-hidden">
+      {size.width > 0 && size.height > 0 && (
+        <Stage
         width={size.width}
         height={size.height}
         style={{ background: 'transparent' }}
@@ -94,7 +95,8 @@ export const WarehouseMap: React.FC = () => {
               const col = Math.floor((pos.x - pan.x) / scale / cellSize);
               const row = Math.floor((pos.y - pan.y) / scale / cellSize);
               if (appMode === 'BUILDER' && pendingPlaceType) {
-                placeAtCell(pendingPlaceType, row, col);
+                const { pendingAssetUrl } = useWarehouseStore.getState();
+                placeAtCell(pendingPlaceType, row, col, pendingAssetUrl);
                 return;
               }
               setSelectedItem('FLOOR', 'FLOOR');
@@ -184,6 +186,7 @@ export const WarehouseMap: React.FC = () => {
           })}
         </Layer>
       </Stage>
+      )}
     </div>
   );
 };

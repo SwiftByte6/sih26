@@ -31,7 +31,14 @@ export interface Task {
   failed_time: string | null;
   reassigned_count: number;
   failure_reason: string | null;
+  requiredCapability?: string;
+  requiredSensingRadius?: number;
+  deliveryComplexity?: 'STANDARD' | 'COMPLEX' | 'HEAVY' | 'SENSITIVE';
+  ineligibilityAudit?: Record<string, string[]>;
+  recoveryAudit?: { failedRobotId: string; recoveredRobotId?: string; recoveryPhase?: string; recoveryRound?: number };
+  handoverAudit?: { originalRobotId: string; replacementRobotId?: string; handoverReason: string; handoverPhase: string; handoverRound: number };
 }
+
 
 export type TaskEventType =
   | 'TASK_CREATED'

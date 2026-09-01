@@ -25,7 +25,20 @@ import { useTaskStore } from './taskStore';
 import { snapAndClamp } from '../lib/coords';
 import { clampAllToGrid, cloneLayout, robotsForPlay, validateLayout, LayoutValidationIssue } from '../engine/validateLayout';
 
+import { useP2PStore } from './p2pStore';
+import { resolveTickCollisions } from '../engine/coordination/CollisionCoordinator';
+import { resolveLocationCoordinates } from '../engine/evaluation/TaskEvaluator';
+import { isWalkable } from '../engine/pathfinding';
+
 export type Task = { id: string, targetRow: number, targetCol: number, assignedTo: string | null };
+
+// --- P2P Simulation Globals ---
+export const announcedTaskIds = new Set<string>();
+export const announcedTaskTimestamps = new Map<string, number>();
+export const lastRobotTelemetry = new Map<string, any>();
+export const lastConflictTime = new Map<string, number>();
+export const blockedTicksMap = new Map<string, number>();
+export const taskAllocationRounds = new Map<string, number>();
 
 const MAX_MESSAGES = 200;
 const LAYOUT_KEY = 'amr-warehouse-layout';
@@ -138,6 +151,7 @@ interface WarehouseState {
   cellSize: number;
   metersPerCell: number;
   gridSnap: number;
+  collisionsCount: number;
 
   communications: CommunicationMessage[];
   activeCommLinks: ActiveCommLink[];
@@ -146,6 +160,7 @@ interface WarehouseState {
   viewMode: ViewMode;
   transformMode: TransformMode;
   pendingPlaceType: PlaceableType | null;
+  pendingAssetUrl: string | null;
   simSpeed: number;
   showSensors: boolean;
   validationIssues: LayoutValidationIssue[];
@@ -163,7 +178,7 @@ interface WarehouseState {
   setViewMode: (mode: ViewMode) => void;
   setAppMode: (mode: AppMode) => void;
   setTransformMode: (mode: TransformMode) => void;
-  setPendingPlaceType: (type: PlaceableType | null) => void;
+  setPendingPlaceType: (type: PlaceableType | null, assetUrl?: string | null) => void;
   setSimSpeed: (speed: number) => void;
   toggleSensors: () => void;
   setGridSnap: (snap: number) => void;
@@ -178,9 +193,12 @@ interface WarehouseState {
   updateShelf: (id: string, updates: Partial<Shelf>) => void;
   removeShelf: (id: string) => void;
 
-  addRobot: (robot: Omit<Robot, 'id'>) => void;
+  addRobot: (robot: Partial<Robot> & { id?: string }) => void;
   updateRobot: (id: string, updates: Partial<Robot>) => void;
   removeRobot: (id: string) => void;
+
+  assignTaskToRobot: (robotId: string, task: any) => void;
+  removeAnnouncedTaskId: (taskId: string) => void;
 
   addPoi: (poi: Omit<PointOfInterest, 'id'>) => void;
   updatePoi: (id: string, updates: Partial<PointOfInterest>) => void;
@@ -190,11 +208,14 @@ interface WarehouseState {
   updatePallet: (id: string, updates: Partial<Pallet>) => void;
   removePallet: (id: string) => void;
 
-  placeAtCell: (type: PlaceableType, row: number, col: number) => void;
+  placeAtCell: (type: PlaceableType, row: number, col: number, assetUrl?: string | null) => void;
   moveSelectedToCell: (row: number, col: number) => void;
   deleteSelected: () => void;
+  duplicateSelected: () => void;
   validateCurrentLayout: () => LayoutValidationIssue[];
   applyLayout: () => { ok: boolean; issues: LayoutValidationIssue[] };
+  getSnapshot: () => LayoutSnapshot;
+  loadLayout: (snap: LayoutSnapshot) => void;
 
   addCommunication: (msg: CommunicationMessage) => void;
   clearCommunications: () => void;
@@ -217,6 +238,7 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
   appMode: 'BUILDER',
   transformMode: 'translate',
   pendingPlaceType: null,
+  pendingAssetUrl: null,
   simSpeed: 1,
   showSensors: false,
   validationIssues: [],
@@ -240,13 +262,14 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
   cellSize: 20,
   metersPerCell: 1,
   gridSnap: 1,
+  collisionsCount: 0,
 
   communications: [],
   activeCommLinks: [],
 
   setViewMode: (mode) => set({ viewMode: mode }),
   setTransformMode: (mode) => set({ transformMode: mode }),
-  setPendingPlaceType: (type) => set({ pendingPlaceType: type }),
+  setPendingPlaceType: (type, assetUrl) => set({ pendingPlaceType: type, pendingAssetUrl: assetUrl ?? null }),
   setSimSpeed: (speed) => set({ simSpeed: Math.max(0.25, Math.min(4, speed)) }),
   toggleSensors: () => set((state) => ({ showSensors: !state.showSensors })),
   setGridSnap: (snap) => set({ gridSnap: Math.max(1, Math.round(snap)) }),
@@ -256,35 +279,39 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
       set({
         appMode: 'BUILDER',
         isRunning: false,
-        pendingPlaceType: null,
+        pendingPlaceType: null, pendingAssetUrl: null,
       });
       return;
     }
     const result = get().applyLayout();
     if (result.ok) {
-      set({ appMode: 'PLAY', pendingPlaceType: null, selectedItemId: null, selectedItemType: null });
+      set({ appMode: 'PLAY', pendingPlaceType: null, pendingAssetUrl: null, selectedItemId: null, selectedItemType: null });
     } else {
-      alert(`Cannot switch to Play mode. There are ${result.issues.filter(i => i.severity === 'error').length} blocking errors. Please check the Builder Sidebar.`);
+      if (typeof window !== 'undefined') {
+        alert('Cannot switch to PLAY mode. Layout has errors:\n' + result.issues.filter(i=>i.severity==='error').map(i=>'- ' + i.message).join('\n'));
+      }
     }
   },
 
-  setSelectedItem: (id, type) => set({ selectedItemId: id, selectedItemType: type, pendingPlaceType: null }),
+  setSelectedItem: (id, type) => set({ selectedItemId: id, selectedItemType: type, pendingPlaceType: null, pendingAssetUrl: null }),
   toggleSimulation: () => {
-    const { appMode, isRunning } = get();
-    if (appMode !== 'PLAY') {
+    const { isRunning } = get();
+    if (isRunning) {
+      get().pauseSimulation();
+    } else {
       get().startSimulation();
-      return;
     }
-    set({ isRunning: !isRunning });
   },
   startSimulation: () => {
     if (get().appMode !== 'PLAY') {
       const result = get().applyLayout();
       if (!result.ok) {
-        alert("Cannot start simulation. Fix layout errors first.");
+        if (typeof window !== 'undefined') {
+          alert('Cannot run simulation. Layout has errors:\n' + result.issues.filter(i=>i.severity==='error').map(i=>'- ' + i.message).join('\n'));
+        }
         return;
       }
-      set({ appMode: 'PLAY', isRunning: true, pendingPlaceType: null });
+      set({ appMode: 'PLAY', isRunning: true, pendingPlaceType: null, pendingAssetUrl: null });
       return;
     }
     set({ isRunning: true });
@@ -292,7 +319,7 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
   pauseSimulation: () => set({ isRunning: false }),
   stopSimulation: () => set({ isRunning: false }),
   resetSimulation: () => {
-    useTaskStore.getState().clearTasks();
+    useTaskStore.getState().resetTasks();
     const layout = get().savedLayout;
     const cloned = cloneLayout(layout);
     set({
@@ -311,7 +338,9 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
       selectedItemType: null,
       communications: [],
       activeCommLinks: [],
+      collisionsCount: 0,
     });
+    useP2PStore.getState().initializeNetwork(cloned.robots.map((r) => r.id));
   },
   setScale: (scale) => set({ scale }),
   setPan: (pan) => set({ pan }),
@@ -390,19 +419,30 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
   })),
 
   addRobot: (robot) => set((state) => {
-    const nextId = nextPrefixedId('R', state.robots.map((r) => r.id));
-    const pos = clampMove(robot.row, robot.col, 1, 1, state);
+    const nextId = robot.id || nextPrefixedId('R', state.robots.map((r) => r.id));
+    const pos = clampMove(robot.row ?? 10, robot.col ?? 10, 1, 1, state);
     const created: Robot = {
       ...DEFAULT_TRANSFORM,
       ...robot,
       ...pos,
       id: nextId,
+      label: robot.label || nextId,
+      state: robot.state || 'IDLE',
+      battery: robot.battery ?? 100,
+      speed: robot.speed ?? 1.2,
       path: [],
-      state: 'WAITING',
       currentTask: null,
       currentTaskId: null,
       taskPhase: null,
-    };
+      pickupPoint: null,
+      dropPoint: null,
+      sensingRadius: robot.sensingRadius ?? 5,
+      payloadCapacity: robot.payloadCapacity ?? 20,
+      currentLoad: robot.currentLoad ?? 0,
+      temperature: robot.temperature ?? 35,
+      signalStrength: robot.signalStrength ?? 100,
+      deliveryCapability: robot.deliveryCapability ?? 'Standard Transport',
+    } as Robot;
     return {
       robots: [...state.robots, created],
       selectedItemId: nextId,
@@ -410,28 +450,96 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
     };
   }),
   updateRobot: (id, updates) => set((state) => {
-    if (state.appMode === 'PLAY' && (updates.row !== undefined || updates.col !== undefined)) {
-      const rest = { ...updates };
-      delete rest.row;
-      delete rest.col;
-      return { robots: state.robots.map((r) => (r.id === id ? { ...r, ...rest } : r)) };
-    }
     return {
       robots: state.robots.map((r) => {
         if (r.id !== id) return r;
         const next = { ...r, ...updates };
         const pos = clampMove(next.row, next.col, 1, 1, state);
-        
-        // If moved in builder mode, clear its path and task to prevent teleportation
         const moved = pos.row !== r.row || pos.col !== r.col;
-        if (state.appMode === 'BUILDER' && moved) {
-          return { ...next, ...pos, path: [], state: 'WAITING', currentTask: null, currentTaskId: null, taskPhase: null, pickupPoint: null, dropPoint: null };
+        
+        if (moved) {
+          if (state.appMode === 'BUILDER') {
+            return { 
+              ...next, 
+              ...pos, 
+              path: [], 
+              state: 'WAITING', 
+              currentTask: null, 
+              currentTaskId: null, 
+              taskPhase: null, 
+              pickupPoint: null, 
+              dropPoint: null 
+            };
+          } else {
+            // In PLAY mode, recalculate path from new position
+            let newPath: { row: number; col: number }[] = [];
+            const targetCoord = r.taskPhase === 'TO_PICKUP' ? r.pickupPoint : r.taskPhase === 'TO_DROP' ? r.dropPoint : null;
+            if (targetCoord) {
+              newPath = findPathAStar(state, pos.row, pos.col, targetCoord.row, targetCoord.col);
+            }
+            return {
+              ...next,
+              ...pos,
+              path: newPath,
+              state: newPath.length === 0 && targetCoord ? 'WAITING' : r.state
+            };
+          }
         }
         
         return { ...next, ...pos };
       }),
     };
   }),
+
+  assignTaskToRobot: (robotId, task) => set((state) => {
+    console.log(`[WAREHOUSE] assignTaskToRobot called for robot ${robotId} and task ${task.task_id}`);
+    const pickupCoord = resolveLocationCoordinates(task.pickup_point, state.pois, state.shelves);
+    const dropCoord = resolveLocationCoordinates(task.drop_point, state.pois, state.shelves);
+    
+    return {
+      robots: state.robots.map((r) => {
+        if (r.id === robotId) {
+          let newPath = r.path;
+          let newState = r.state;
+          if (pickupCoord && dropCoord) {
+            newPath = findPathAStar(state, r.row, r.col, pickupCoord.row, pickupCoord.col);
+            console.log(`[WAREHOUSE] route generated for ${robotId} to ${task.pickup_point}: path length ${newPath.length}`);
+            if (newPath.length > 0) {
+              newState = 'MOVING';
+              console.log(`[WAREHOUSE] robot state changed to MOVING for ${robotId}`);
+            } else {
+              console.error(`[P2P ERROR] Robot ${robotId} claimed task ${task.task_id} but A* found NO PATH to pickup ${task.pickup_point}`);
+              setTimeout(() => {
+                useTaskStore.getState().failTask(task.task_id, 'No path to pickup');
+                useP2PStore.getState().sendDirectMessage(r.id, 'SYSTEM', 'TEXT', { body: `Cannot find path to pickup ${pickupCoord.label}` });
+              }, 0);
+            }
+          } else {
+            console.error(`[P2P ERROR] Robot ${robotId} claimed task ${task.task_id} but coordinates could not be resolved! Pickup: ${!!pickupCoord}, Drop: ${!!dropCoord}`);
+            setTimeout(() => {
+              useTaskStore.getState().failTask(task.task_id, 'Invalid pickup or drop location coordinates');
+            }, 0);
+          }
+          return {
+            ...r,
+            currentTask: pickupCoord ? `Pickup at ${pickupCoord.label}` : 'Task Assigned',
+            currentTaskId: task.task_id,
+            taskPhase: 'TO_PICKUP',
+            pickupPoint: pickupCoord,
+            dropPoint: dropCoord,
+            path: newPath,
+            state: newState,
+          };
+        }
+        return r;
+      }),
+    };
+  }),
+  removeAnnouncedTaskId: (taskId: string) => {
+    announcedTaskIds.delete(taskId);
+    announcedTaskTimestamps.delete(taskId);
+  },
+
   removeRobot: (id) => set((state) => ({
     robots: state.robots.filter((r) => r.id !== id),
     selectedItemId: state.selectedItemId === id ? null : state.selectedItemId,
@@ -486,13 +594,13 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
     selectedItemType: state.selectedItemId === id ? null : state.selectedItemType,
   })),
 
-  placeAtCell: (type, row, col) => {
+  placeAtCell: (type, row, col, assetUrl) => {
     const state = get();
     const w = type === 'SHELF' ? 6 : type === 'OBSTACLE' ? 2 : 1;
     const h = type === 'SHELF' ? 2 : type === 'OBSTACLE' ? 2 : 1;
     const pos = clampMove(row, col, w, h, state);
     if (type === 'SHELF') get().addShelf({ ...pos, width: 6, height: 2 });
-    else if (type === 'OBSTACLE') get().addObstacle({ ...pos, width: 2, height: 2 });
+    else if (type === 'OBSTACLE') get().addObstacle({ ...pos, width: 2, height: 2, assetUrl: assetUrl || state.pendingAssetUrl || undefined });
     else if (type === 'PALLET') get().addPallet({ ...DEFAULT_TRANSFORM, ...pos, width: 1, height: 1 });
     else if (type === 'ROBOT') {
       get().addRobot({
@@ -513,7 +621,7 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
       const label = type === 'PICKUP' ? `PICKUP ${n}` : type === 'DROP' ? `DROP ${n}` : `CHARGER ${n}`;
       get().addPoi({ ...DEFAULT_TRANSFORM, ...pos, type, label });
     }
-    set({ pendingPlaceType: null });
+    set({ pendingPlaceType: null, pendingAssetUrl: null });
   },
 
   moveSelectedToCell: (row, col) => {
@@ -535,6 +643,49 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
     else if (selectedItemType === 'PALLET') get().removePallet(selectedItemId);
     else if (selectedItemType === 'POI') get().removePoi(selectedItemId);
     else if (selectedItemType === 'ROBOT') get().removeRobot(selectedItemId);
+  },
+
+  duplicateSelected: () => {
+    const state = get();
+    const id = state.selectedItemId;
+    const type = state.selectedItemType;
+    if (!id || !type) return;
+    if (type === 'SHELF') {
+      const src = state.shelves.find(s => s.id === id);
+      if (src) {
+        state.placeAtCell('SHELF', src.row + 1, src.col);
+        const nextId = get().shelves[get().shelves.length - 1].id;
+        get().updateShelf(nextId, { rotX: src.rotX, rotY: src.rotY, rotZ: src.rotZ, scale: src.scale, posY: src.posY });
+      }
+    } else if (type === 'OBSTACLE') {
+      const src = state.obstacles.find(s => s.id === id);
+      if (src) {
+        state.placeAtCell('OBSTACLE', src.row + 1, src.col, src.assetUrl);
+        const nextId = get().obstacles[get().obstacles.length - 1].id;
+        get().updateObstacle(nextId, { rotX: src.rotX, rotY: src.rotY, rotZ: src.rotZ, scale: src.scale, posY: src.posY });
+      }
+    } else if (type === 'PALLET') {
+      const src = state.pallets.find(s => s.id === id);
+      if (src) {
+        state.placeAtCell('PALLET', src.row + 1, src.col);
+        const nextId = get().pallets[get().pallets.length - 1].id;
+        get().updatePallet(nextId, { rotX: src.rotX, rotY: src.rotY, rotZ: src.rotZ, scale: src.scale, posY: src.posY });
+      }
+    } else if (type === 'ROBOT') {
+      const src = state.robots.find(s => s.id === id);
+      if (src) {
+        state.placeAtCell('ROBOT', src.row + 1, src.col);
+        const nextId = get().robots[get().robots.length - 1].id;
+        get().updateRobot(nextId, { rotX: src.rotX, rotY: src.rotY, rotZ: src.rotZ, scale: src.scale, posY: src.posY });
+      }
+    } else if (type === 'POI') {
+      const src = state.pois.find(s => s.id === id);
+      if (src) {
+        state.placeAtCell(src.type, src.row + 1, src.col);
+        const nextId = get().pois[get().pois.length - 1].id;
+        get().updatePoi(nextId, { rotX: src.rotX, rotY: src.rotY, rotZ: src.rotZ, scale: src.scale, posY: src.posY });
+      }
+    }
   },
 
   validateCurrentLayout: () => {
@@ -569,10 +720,37 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
       activeCommLinks: [],
       validationIssues: issues,
       appMode: 'PLAY',
-      pendingPlaceType: null,
+      pendingPlaceType: null, pendingAssetUrl: null,
+    });
+    return { ok: true, issues };
+  },
+
+  getSnapshot: () => {
+    return snapshotFrom(get());
+  },
+
+  loadLayout: (snap) => {
+    persistLayout(snap);
+    const cloned = cloneLayout(snap);
+    set({
+      savedLayout: snap,
+      gridRows: cloned.gridRows,
+      gridCols: cloned.gridCols,
+      walls: cloned.walls,
+      shelves: cloned.shelves,
+      obstacles: cloned.obstacles,
+      pois: cloned.pois,
+      pallets: cloned.pallets,
+      robots: robotsForPlay(cloned.robots),
+      intersections: cloned.intersections || [],
+      paths: cloned.paths || [],
+      selectedItemId: null,
+      selectedItemType: null,
+      validationIssues: [],
+      isRunning: false,
+      appMode: 'BUILDER'
     });
     useTaskStore.getState().clearTasks();
-    return { ok: true, issues };
   },
 
   addCommunication: (msg) => set((state) => {
@@ -586,12 +764,147 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
   clearCommunications: () => set({ communications: [], activeCommLinks: [] }),
 
   tick: () => set((state) => {
+
     if (!state.isRunning) return state;
 
-    const taskStore = useTaskStore.getState();
     const now = Date.now();
+    const p2pStore = useP2PStore.getState();
+
+    // Ensure ALL robots in current layout are registered in P2P Network
+    state.robots.forEach((robot) => {
+      if (!p2pStore.network.getNode(robot.id)) {
+        p2pStore.network.registerNode(robot.id);
+      }
+    });
+
+    // Process P2P Heartbeats & Peer Discovery in Simulated Network
+    p2pStore.processHeartbeats();
+
+    // Event / Change-Driven P2P STATUS_UPDATE broadcast:
+    // Broadcast ONLY when meaningful state, task, position (>= 5 cells), battery (>= 5%), or online status changes.
+    state.robots.forEach((robot) => {
+      const isOnline = robot.isOnline ?? true;
+      if (!isOnline) return;
+
+      const taskLabel = robot.currentTask || robot.currentTaskId || null;
+      const currentSnap = {
+        state: robot.state,
+        col: robot.col,
+        row: robot.row,
+        battery: Math.round(robot.battery),
+        task: taskLabel,
+        isOnline,
+      };
+
+      const prev = lastRobotTelemetry.get(robot.id);
+      if (!prev) {
+        // Initial snapshot registration (broadcast initial status once)
+        lastRobotTelemetry.set(robot.id, currentSnap);
+        p2pStore.broadcastMessage(robot.id, 'STATUS_UPDATE', {
+          robotId: robot.id,
+          position: { col: robot.col, row: robot.row },
+          status: robot.state,
+          battery: currentSnap.battery,
+          task: taskLabel,
+          speed: robot.speed,
+          body: `Initial Status: ${robot.state} | Pos (${robot.col},${robot.row}) | Batt: ${currentSnap.battery}%${taskLabel ? ` | Task: ${taskLabel}` : ''}`,
+        });
+        return;
+      }
+
+      // Check meaningful change conditions:
+      const stateChanged = prev.state !== currentSnap.state;
+      const taskChanged = prev.task !== currentSnap.task;
+      const onlineChanged = prev.isOnline !== currentSnap.isOnline;
+      const posDist = Math.abs(currentSnap.col - prev.col) + Math.abs(currentSnap.row - prev.row);
+      const posChangedMeaningfully = posDist >= 5;
+      const battChangedMeaningfully = Math.abs(currentSnap.battery - prev.battery) >= 5;
+
+      if (stateChanged || taskChanged || onlineChanged || posChangedMeaningfully || battChangedMeaningfully) {
+        lastRobotTelemetry.set(robot.id, currentSnap);
+
+        const changes: string[] = [];
+        if (stateChanged) changes.push(`State: ${prev.state} ΓåÆ ${currentSnap.state}`);
+        if (taskChanged) changes.push(`Task: ${prev.task || 'None'} ΓåÆ ${currentSnap.task || 'None'}`);
+        if (battChangedMeaningfully) changes.push(`Batt: ${prev.battery}% ΓåÆ ${currentSnap.battery}%`);
+        if (posChangedMeaningfully) changes.push(`Moved to (${currentSnap.col},${currentSnap.row})`);
+
+        p2pStore.broadcastMessage(robot.id, 'STATUS_UPDATE', {
+          robotId: robot.id,
+          position: { col: robot.col, row: robot.row },
+          status: robot.state,
+          battery: currentSnap.battery,
+          task: taskLabel,
+          speed: robot.speed,
+          body: `STATUS_UPDATE [${changes.join(' | ')}] Pos (${robot.col},${robot.row}) | Batt: ${currentSnap.battery}%`,
+        });
+      }
+    });
+
+    const taskStore = useTaskStore.getState();
+
+    // Assigned Task Execution Dispatcher:
+    // If a robot is WAITING/IDLE with no currentTask, check if there is an ASSIGNED task in taskStore for this robot.
+    // Immediately dispatch assignTaskToRobot so that assigned tasks execute sequentially without getting stranded!
+    state.robots.forEach((robot) => {
+      if ((robot.state === 'WAITING' || robot.state === 'IDLE') && !robot.currentTask && !robot.currentTaskId) {
+        const assignedTask = taskStore.tasks.find(
+          (t) => t.assigned_robot_id === robot.id && (t.status === 'ASSIGNED' || t.status === 'IN_PROGRESS')
+        );
+        if (assignedTask) {
+          useWarehouseStore.getState().assignTaskToRobot(robot.id, assignedTask);
+        }
+      }
+    });
+
+    const pendingTasks = taskStore.getPendingTasks();
+
+    // Announce the top unassigned pending task that has not been announced yet,
+    // or re-announce an unassigned pending task if 4+ seconds have elapsed.
+    // We announce 1 task at a time to allow the winner to transition to MOVING before the next task is announced.
+    const unassignedTasks = pendingTasks.filter((t) => t.status === 'PENDING' && t.assigned_robot_id === null);
+
+    let taskToAnnounce = unassignedTasks.find((t) => !announcedTaskIds.has(t.task_id));
+    if (!taskToAnnounce) {
+      const hasFreeRobot = state.robots.some(
+        (r) => (r.state === 'WAITING' || r.state === 'IDLE') && !r.currentTask && !r.currentTaskId && (r.isOnline ?? true)
+      );
+      if (hasFreeRobot) {
+        taskToAnnounce = unassignedTasks.find((t) => {
+          const lastTime = announcedTaskTimestamps.get(t.task_id);
+          const timeSince = lastTime ? (now - lastTime) : 0;
+          const shouldReannounce = !lastTime || (now - lastTime > 3000);
+          console.log(`[P2P] Checking unassigned task ${t.task_id}. hasFreeRobot=true. lastTime=${lastTime}. timeSince=${timeSince}. shouldReannounce=${shouldReannounce}`);
+          return shouldReannounce;
+        });
+      }
+    }
+
+    if (taskToAnnounce) {
+      console.log(`[P2P] announcement sent for task ${taskToAnnounce.task_id}`);
+      announcedTaskIds.add(taskToAnnounce.task_id);
+      announcedTaskTimestamps.set(taskToAnnounce.task_id, now);
+      const currentRound = (taskAllocationRounds.get(taskToAnnounce.task_id) || 0) + 1;
+      taskAllocationRounds.set(taskToAnnounce.task_id, currentRound);
+
+      p2pStore.broadcastMessage('TASK_DISPATCH', 'TASK_ANNOUNCEMENT', {
+        taskId: taskToAnnounce.task_id,
+        task: taskToAnnounce,
+        allocationRound: currentRound,
+        pickupPoint: taskToAnnounce.pickup_point,
+        dropPoint: taskToAnnounce.drop_point,
+        weight: taskToAnnounce.weight,
+        priority: taskToAnnounce.priority,
+        requiredCapability: taskToAnnounce.requiredCapability,
+        requiredSensingRadius: taskToAnnounce.requiredSensingRadius,
+        body: `TASK_ANNOUNCEMENT: ${taskToAnnounce.task_id} [${taskToAnnounce.task_type}] Pickup: ${taskToAnnounce.pickup_point} -> Drop: ${taskToAnnounce.drop_point} (Weight: ${taskToAnnounce.weight}kg, Round ${currentRound})`,
+      });
+    }
+
     const newMessages: CommunicationMessage[] = [];
     const newLinks: ActiveCommLink[] = [];
+
+
     
     // Expire old visual links
     const activeLinks = state.activeCommLinks.filter(l => l.expires > now);
@@ -601,139 +914,134 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
       if (poi) return { row: poi.row, col: poi.col, label: poi.label };
       
       const shelf = state.shelves.find(s => s.id.toLowerCase() === locString.toLowerCase() || locString.toLowerCase().includes(s.id.toLowerCase()));
+      // Return a coordinate just outside the shelf (e.g. row - 1) because the shelf itself is an obstacle
       if (shelf) return { row: shelf.row - 1, col: shelf.col, label: shelf.id };
       
       return null;
     };
 
-    const updatedRobots = state.robots.map(robot => {
-      // Robot is idle/waiting -> assign new task
-      if (robot.state === 'WAITING' || (robot.state !== 'MOVING' && robot.path.length === 0)) {
-        const pendingTasks = taskStore.getPendingTasks();
-        let assignedTask = null;
-        let pickupCoord = null;
-        let dropCoord = null;
+    // Evaluate tick movement intents using deterministic CollisionCoordinator
+    const collisionResolution = resolveTickCollisions(state.robots, [...state.obstacles, ...(state.shelves || []), ...(state.pallets || [])] as any, taskStore.tasks, blockedTicksMap);
 
-        for (const t of pendingTasks) {
-          pickupCoord = findLocationCoordinates(t.pickup_point);
-          dropCoord = findLocationCoordinates(t.drop_point);
-          if (pickupCoord && dropCoord && t.assigned_robot_id === null) {
-            assignedTask = t;
-            break;
-          }
-        }
-
-        if (assignedTask && pickupCoord && dropCoord) {
-          taskStore.receiveAssignmentResult(assignedTask.task_id, robot.id);
-          const newPath = findPathAStar(state, robot.row, robot.col, pickupCoord.row, pickupCoord.col);
-          
-          if (newPath.length > 0) {
-            newMessages.push(createMsg('SYSTEM', robot.id, `Task assigned: [${assignedTask.task_id}] Pickup at ${pickupCoord.label}`, 'TASK', 'NORMAL'));
-            newMessages.push(createMsg(robot.id, 'ALL', `Heading to pickup ${pickupCoord.label}`, 'NAVIGATION', 'NORMAL'));
-            newLinks.push({ from: robot.id, to: 'ALL', expires: now + 2000 });
-            return { 
-              ...robot, 
-              path: newPath, 
-              state: 'MOVING' as const, 
-              currentTask: assignedTask.task_id,
-              currentTaskId: assignedTask.task_id,
-              taskPhase: 'TO_PICKUP' as const,
-              pickupPoint: pickupCoord,
-              dropPoint: dropCoord
-            };
-          } else {
-            taskStore.failTask(assignedTask.task_id, 'No path to pickup');
-            newMessages.push(createMsg(robot.id, 'SYSTEM', `Cannot find path to pickup ${pickupCoord.label}`, 'FAILURE', 'CRITICAL'));
-          }
-        }
+    // Process yielding events for P2P messaging (throttled)
+    collisionResolution.yieldingEvents.forEach((evt) => {
+      const conflictKey = `${evt.yieldingRobotId}-${evt.priorityRobotId}`;
+      if (!lastConflictTime.has(conflictKey) || (now - (lastConflictTime.get(conflictKey) || 0) > 3000)) {
+        lastConflictTime.set(conflictKey, now);
+        p2pStore.sendDirectMessage(evt.yieldingRobotId, evt.priorityRobotId, 'TEXT', {
+          body: `YIELDING to ${evt.priorityRobotId}: ${evt.reason}`,
+        });
+        newLinks.push({ from: evt.yieldingRobotId, to: evt.priorityRobotId, expires: now + 2500 });
       }
+    });
 
-      if (robot.state === 'MOVING' && robot.path.length > 0) {
-        const nextCell = robot.path[0];
-        
-        const isBlocked = state.obstacles.some(o => 
-          nextCell.row >= o.row && nextCell.row < o.row + o.height && 
-          nextCell.col >= o.col && nextCell.col < o.col + o.width
-        );
+    const updatedRobots = state.robots.map(robot => {
+      if ((robot.state === 'MOVING' || robot.state === 'WAITING_FOR_PATH_CLEARANCE') && robot.path.length > 0) {
+        // Check if robot is blocked by collision coordinator
+        if (collisionResolution.blockedRobotIds.has(robot.id)) {
+          const blockInfo = collisionResolution.blockedRobotIds.get(robot.id);
+          return {
+            ...robot,
+            state: 'WAITING_FOR_PATH_CLEARANCE' as const,
+          };
+        }
 
-        if (isBlocked) {
-          newMessages.push(createMsg(robot.id, 'ALL', `Obstacle detected at (${nextCell.row},${nextCell.col}). Path blocked!`, 'OBSTACLE', 'WARNING'));
-          newLinks.push({ from: robot.id, to: 'ALL', expires: now + 3000 });
-          
-          const target = robot.path[robot.path.length - 1];
-          const newPath = findPathAStar(state, robot.row, robot.col, target.row, target.col);
-          if (newPath.length > 0) {
-            newMessages.push(createMsg(robot.id, 'ALL', `Recalculating route... New path confirmed`, 'NAVIGATION', 'IMPORTANT'));
-            return { ...robot, path: newPath };
-          } else {
-            newMessages.push(createMsg(robot.id, 'ALL', `No alternate route available. Waiting.`, 'OBSTACLE', 'CRITICAL'));
-            return { ...robot, state: 'WAITING' as const, path: [] };
+        // If unblocked and allowed, advance 1 cell along path
+        if (collisionResolution.allowedRobotIds.has(robot.id)) {
+          const nextCell = robot.path[0];
+
+          const approachingIntersection = state.intersections.find(i => i.row === nextCell.row && i.col === nextCell.col);
+          if (approachingIntersection) {
+            p2pStore.broadcastMessage(robot.id, 'TEXT', { body: `Approaching intersection ${approachingIntersection.id}` });
           }
-        }
-        
-        const conflictRobot = state.robots.find(r => r.id !== robot.id && r.row === nextCell.row && r.col === nextCell.col);
-        if (conflictRobot) {
-          newMessages.push(createMsg(robot.id, conflictRobot.id, `Collision risk at (${nextCell.row},${nextCell.col}). I'll wait.`, 'COORDINATION', 'WARNING'));
-          newLinks.push({ from: robot.id, to: conflictRobot.id, expires: now + 2500 });
-          return robot;
-        }
 
-        const approachingIntersection = state.intersections.find(i => i.row === nextCell.row && i.col === nextCell.col);
-        if (approachingIntersection) {
-          newMessages.push(createMsg(robot.id, 'ALL', `Approaching intersection ${approachingIntersection.id}`, 'COORDINATION', 'NORMAL'));
-        }
-
-        const remainingPath = robot.path.slice(1);
-        let newState: RobotState = 'MOVING';
-        let newTaskPhase: 'TO_PICKUP' | 'TO_DROP' | null = robot.taskPhase || null;
-        let newCurrentTaskId: string | null = robot.currentTaskId || null;
-        let newPath = remainingPath;
-        
-        if (remainingPath.length === 0) {
-          if (robot.taskPhase === 'TO_PICKUP' && robot.currentTaskId && robot.dropPoint) {
-            taskStore.startTask(robot.currentTaskId);
-            newMessages.push(createMsg(robot.id, 'ALL', `Picked up item. Heading to ${robot.dropPoint.label}`, 'TASK', 'NORMAL'));
-            newPath = findPathAStar(state, nextCell.row, nextCell.col, robot.dropPoint.row, robot.dropPoint.col);
-            newTaskPhase = 'TO_DROP';
-            if (newPath.length === 0) {
-              taskStore.failTask(robot.currentTaskId, 'No path to drop');
+          // Move to next cell
+          const remainingPath = robot.path.slice(1);
+          let newState: RobotState = 'MOVING';
+          let newTaskPhase: 'TO_PICKUP' | 'TO_DROP' | null = robot.taskPhase || null;
+          let newCurrentTaskId: string | null = robot.currentTaskId || null;
+          let newPath = remainingPath;
+          
+          if (remainingPath.length === 0) {
+            if (robot.taskPhase === 'TO_PICKUP' && robot.currentTaskId && robot.dropPoint) {
+              // Reached pickup, start going to drop
+              taskStore.startTask(robot.currentTaskId);
+              p2pStore.broadcastMessage(robot.id, 'TEXT', { body: `Picked up item. Heading to ${robot.dropPoint.label}` });
+              newPath = findPathAStar(state, nextCell.row, nextCell.col, robot.dropPoint.row, robot.dropPoint.col);
+              newTaskPhase = 'TO_DROP';
+              if (newPath.length === 0) {
+                taskStore.failTask(robot.currentTaskId, 'No path to drop');
+                newState = 'WAITING';
+                newTaskPhase = null;
+                newCurrentTaskId = null;
+              }
+            } else if (robot.taskPhase === 'TO_DROP' && robot.currentTaskId) {
+              // Reached drop, task complete
+              taskStore.completeTask(robot.currentTaskId);
+              p2pStore.broadcastMessage(robot.id, 'TEXT', { body: `Task [${robot.currentTaskId}] completed at ${robot.dropPoint?.label}.` });
+              newLinks.push({ from: robot.id, to: 'ALL', expires: now + 2000 });
               newState = 'WAITING';
               newTaskPhase = null;
               newCurrentTaskId = null;
+            } else {
+              // Just reached a point, no active task phase
+              newState = 'WAITING';
             }
-          } else if (robot.taskPhase === 'TO_DROP' && robot.currentTaskId) {
-            taskStore.completeTask(robot.currentTaskId);
-            newMessages.push(createMsg(robot.id, 'ALL', `Task [${robot.currentTaskId}] completed at ${robot.dropPoint?.label}.`, 'TASK', 'NORMAL'));
-            newLinks.push({ from: robot.id, to: 'ALL', expires: now + 2000 });
-            newState = 'WAITING';
-            newTaskPhase = null;
-            newCurrentTaskId = null;
-          } else {
-            newState = 'WAITING';
           }
+          
+          // Battery warning & Phase 7 Dynamic Handover Trigger
+          const newBattery = robot.battery - 0.3;
+          if (newBattery <= 20 && robot.battery > 20) {
+            p2pStore.broadcastMessage(robot.id, 'TEXT', { body: `Battery at ${Math.round(newBattery)}%. Requesting charger & task handover.` });
+            if (robot.currentTask || robot.currentTaskId) {
+              try {
+                const requestTaskHandover = require('../engine/recovery/TaskHandoverManager').requestTaskHandover;
+                requestTaskHandover(robot.id, 'CRITICAL_BATTERY');
+              } catch (e) {}
+            }
+          }
+          
+          return {
+            ...robot,
+            col: nextCell.col,
+            row: nextCell.row,
+            path: newPath,
+            state: newState,
+            taskPhase: newTaskPhase,
+            currentTaskId: newCurrentTaskId,
+            currentTask: newCurrentTaskId ? newCurrentTaskId : null,
+            battery: Math.max(0, newBattery)
+          };
         }
-        
-        const newBattery = robot.battery - 0.3;
-        if (newBattery <= 20 && robot.battery > 20) {
-          newMessages.push(createMsg(robot.id, 'ALL', `Battery at ${Math.round(newBattery)}%. Requesting charger.`, 'BATTERY', 'WARNING'));
+      }
+
+      if (robot.state === 'CHARGING') {
+        const newBattery = Math.min(100, robot.battery + 1.0);
+        if (newBattery >= 100) {
+          p2pStore.broadcastMessage(robot.id, 'STATUS_UPDATE', {
+            robotId: robot.id,
+            status: 'WAITING',
+            battery: 100,
+            body: `CHARGING complete (100%). Transitioning to WAITING.`,
+          });
+          return {
+            ...robot,
+            battery: 100,
+            state: 'WAITING' as const,
+          };
         }
-        
         return {
           ...robot,
-          col: nextCell.col,
-          row: nextCell.row,
-          path: newPath,
-          state: newState,
-          taskPhase: newTaskPhase,
-          currentTaskId: newCurrentTaskId,
-          currentTask: newCurrentTaskId ? newCurrentTaskId : null,
-          battery: Math.max(0, newBattery)
+          battery: newBattery,
         };
       }
+
       return robot;
     });
 
-    const allComms = [...state.communications, ...newMessages];
+    // Trim communications to MAX_MESSAGES
+    const currentComms = get().communications;
+    const allComms = [...currentComms, ...newMessages];
     if (allComms.length > MAX_MESSAGES) {
       allComms.splice(0, allComms.length - MAX_MESSAGES);
     }
@@ -741,7 +1049,12 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
     return { 
       robots: updatedRobots, 
       communications: allComms,
-      activeCommLinks: [...activeLinks, ...newLinks]
+      activeCommLinks: [...activeLinks, ...newLinks],
+      collisionsCount: state.collisionsCount
     };
   }),
+
 }));
+
+// Initialize P2P Network with default robots on module load
+useP2PStore.getState().initializeNetwork(demoWarehouse.robots.map((r) => r.id));

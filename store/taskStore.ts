@@ -11,7 +11,144 @@ import {
 } from '../types/task';
 
 // Initial demo tasks with T-001 format
-const INITIAL_DEMO_TASKS: Task[] = [];
+const INITIAL_DEMO_TASKS: Task[] = [
+  {
+    task_id: 'T-001',
+    task_type: 'DELIVER_ITEM',
+    pickup_point: 'PICKUP A',
+    drop_point: 'DROP B',
+    priority: 'NORMAL',
+    weight: 10,
+    status: 'PENDING',
+    assigned_robot_id: null,
+    created_time: new Date().toISOString(),
+    assigned_time: null,
+    started_time: null,
+    completed_time: null,
+    failed_time: null,
+    reassigned_count: 0,
+    failure_reason: null,
+  },
+  {
+    task_id: 'T-002',
+    task_type: 'RESTOCK_SHELF',
+    pickup_point: 'Storage-01',
+    drop_point: 'S1',
+    priority: 'LOW',
+    weight: 15,
+    status: 'PENDING',
+    assigned_robot_id: null,
+    created_time: new Date().toISOString(),
+    assigned_time: null,
+    started_time: null,
+    completed_time: null,
+    failed_time: null,
+    reassigned_count: 0,
+    failure_reason: null,
+  },
+  {
+    task_id: 'T-003',
+    task_type: 'TAKE_TO_PACKING',
+    pickup_point: 'S5',
+    drop_point: 'Packing Area B',
+    priority: 'NORMAL',
+    weight: 12,
+    status: 'PENDING',
+    assigned_robot_id: null,
+    created_time: new Date().toISOString(),
+    assigned_time: null,
+    started_time: null,
+    completed_time: null,
+    failed_time: null,
+    reassigned_count: 0,
+    failure_reason: null,
+  },
+  {
+    task_id: 'T-004',
+    task_type: 'DELIVER_ITEM',
+    pickup_point: 'P3',
+    drop_point: 'D5',
+    priority: 'URGENT',
+    weight: 8,
+    status: 'PENDING',
+    assigned_robot_id: null,
+    created_time: new Date().toISOString(),
+    assigned_time: null,
+    started_time: null,
+    completed_time: null,
+    failed_time: null,
+    reassigned_count: 0,
+    failure_reason: null,
+  },
+  {
+    task_id: 'T-005',
+    task_type: 'STORE_ITEM',
+    pickup_point: 'P1',
+    drop_point: 'Storage-02',
+    priority: 'NORMAL',
+    weight: 18,
+    status: 'PENDING',
+    assigned_robot_id: null,
+    created_time: new Date().toISOString(),
+    assigned_time: null,
+    started_time: null,
+    completed_time: null,
+    failed_time: null,
+    reassigned_count: 0,
+    failure_reason: null,
+  },
+  {
+    task_id: 'T-006',
+    task_type: 'DELIVER_ITEM',
+    pickup_point: 'PICKUP A',
+    drop_point: 'DROP B',
+    priority: 'LOW',
+    weight: 5,
+    status: 'PENDING',
+    assigned_robot_id: null,
+    created_time: new Date().toISOString(),
+    assigned_time: null,
+    started_time: null,
+    completed_time: null,
+    failed_time: null,
+    reassigned_count: 0,
+    failure_reason: null,
+  },
+  {
+    task_id: 'T-007',
+    task_type: 'RESTOCK_SHELF',
+    pickup_point: 'Storage-01',
+    drop_point: 'S2',
+    priority: 'NORMAL',
+    weight: 14,
+    status: 'PENDING',
+    assigned_robot_id: null,
+    created_time: new Date().toISOString(),
+    assigned_time: null,
+    started_time: null,
+    completed_time: null,
+    failed_time: null,
+    reassigned_count: 0,
+    failure_reason: null,
+  },
+  {
+    task_id: 'T-008',
+    task_type: 'TAKE_TO_PACKING',
+    pickup_point: 'S3',
+    drop_point: 'Packing Area B',
+    priority: 'NORMAL',
+    weight: 10,
+    status: 'PENDING',
+    assigned_robot_id: null,
+    created_time: new Date().toISOString(),
+    assigned_time: null,
+    started_time: null,
+    completed_time: null,
+    failed_time: null,
+    reassigned_count: 0,
+    failure_reason: null,
+  },
+];
 
 // Calculate next sequential Task ID in T-001 format
 export const generateNextTaskId = (tasks: Task[]): string => {
@@ -26,14 +163,14 @@ export const generateNextTaskId = (tasks: Task[]): string => {
   return `T-${(maxId + 1).toString().padStart(3, '0')}`;
 };
 
-// Priority Rank: URGENT (300) -> LOW (200) -> NORMAL (100)
+// Priority Rank: URGENT (300) -> NORMAL (200) -> LOW (100)
 const getPriorityRank = (priority: TaskPriority): number => {
   switch (priority) {
     case 'URGENT':
       return 300;
-    case 'LOW':
-      return 200;
     case 'NORMAL':
+      return 200;
+    case 'LOW':
     default:
       return 100;
   }
@@ -50,6 +187,31 @@ export const sortPendingTasksByPriority = (pendingTasks: Task[]): Task[] => {
     }
     return new Date(a.created_time).getTime() - new Date(b.created_time).getTime();
   });
+};
+
+// Helper to release robot when task completes, fails, or is cancelled
+const releaseRobotForTask = (taskId: string, robotId?: string | null) => {
+  try {
+    const warehouseStore = require('./warehouseStore').useWarehouseStore;
+    if (warehouseStore) {
+      const robots = warehouseStore.getState().robots;
+      const updatedRobots = robots.map((r: any) => {
+        if ((robotId && r.id === robotId) || r.currentTask === taskId || r.currentTaskId === taskId) {
+          console.log(`[P2P] Robot ${r.id} released from task ${taskId}, becoming WAITING`);
+          return {
+            ...r,
+            currentTask: null,
+            currentTaskId: null,
+            taskPhase: null,
+            path: [],
+            state: r.state === 'ERROR' ? 'ERROR' : 'WAITING',
+          };
+        }
+        return r;
+      });
+      warehouseStore.setState({ robots: updatedRobots });
+    }
+  } catch (e) {}
 };
 
 export interface ImportedRowValidation {
@@ -230,16 +392,18 @@ const notifyListeners = (type: TaskEventType, task: Task, metadata?: Record<stri
 
 interface TaskState {
   tasks: Task[];
-  activeView: 'WAREHOUSE' | 'TASKS';
+  activeView: 'WAREHOUSE' | 'TASKS' | 'ROBOTS';
 
-  setActiveView: (view: 'WAREHOUSE' | 'TASKS') => void;
+  setActiveView: (view: 'WAREHOUSE' | 'TASKS' | 'ROBOTS') => void;
 
   // Task Creation
   createTask: (taskData: Omit<Task, 'task_id' | 'created_time' | 'assigned_time' | 'started_time' | 'completed_time' | 'failed_time' | 'reassigned_count' | 'failure_reason' | 'status' | 'assigned_robot_id'>) => { success: boolean; taskId: string; error?: string };
   addMultipleTasks: (tasksData: (TaskUploadRow | Partial<Task>)[]) => { success: boolean; addedCount: number; errors: string[] };
   updateTask: (taskId: string, updates: Partial<Task>) => void;
-  deleteTask: (taskId: string) => void;
+  deleteTask: (taskId: string) => { success: boolean; error?: string };
+  redoTask?: (taskId: string) => { success: boolean; newTaskId?: string; error?: string };
   updatePriority: (taskId: string, priority: TaskPriority) => void;
+  updateTaskIneligibilityAudit: (taskId: string, robotId: string, reasons: string[]) => void;
 
   // Queries
   getTask: (taskId: string) => Task | undefined;
@@ -262,6 +426,7 @@ interface TaskState {
   // Persistence
   saveTasks: () => string;
   loadTasks: (jsonContent: string) => boolean;
+  resetTasks: () => void;
   clearTasks: () => void;
 
   // Event subscription
@@ -361,18 +526,91 @@ export const useTaskStore = create<TaskState>()(
 
   deleteTask: (taskId) => {
     const task = get().getTask(taskId);
+    if (!task) {
+      return { success: false, error: `Task "${taskId}" not found.` };
+    }
+
+    // Requirement 2 & 8: Delete allowed ONLY when task.status === PENDING AND assigned_robot_id === null AND started_time === null
+    if (task.status !== 'PENDING' || task.assigned_robot_id !== null || task.started_time !== null) {
+      return { success: false, error: 'Started or assigned tasks cannot be deleted.' };
+    }
+
+    // 1. Remove task from store
     set((state) => ({
       tasks: state.tasks.filter((t) => t.task_id !== taskId),
     }));
-    if (task) notifyListeners('TASK_UPDATED', { ...task, status: 'FAILED', failure_reason: 'Deleted' });
+
+    // 2. Cleanup announced state & local task knowledge in AMR P2P agents
+    try {
+      const warehouseStore = require('./warehouseStore').useWarehouseStore.getState();
+      if (warehouseStore && warehouseStore.removeAnnouncedTaskId) {
+        warehouseStore.removeAnnouncedTaskId(taskId);
+      }
+
+      const p2pStore = require('./p2pStore').useP2PStore.getState();
+      if (p2pStore && p2pStore.removeTaskFromAllNodes) {
+        p2pStore.removeTaskFromAllNodes(taskId);
+      }
+    } catch (e) {}
+
+    notifyListeners('TASK_DELETED' as any, task);
+    return { success: true };
+  },
+
+  redoTask: (taskId) => {
+    const oldTask = get().getTask(taskId);
+    if (!oldTask) return { success: false, error: 'Task not found' };
+
+    // Instead of creating a new task, we reset the existing task to PENDING
+    const updates: Partial<Task> = {
+      status: 'PENDING',
+      assigned_robot_id: null,
+      assigned_time: null,
+      started_time: null,
+      completed_time: null,
+      failed_time: null,
+      failure_reason: null,
+    };
+
+    set((state) => ({
+      tasks: state.tasks.map((t) => (t.task_id === taskId ? { ...t, ...updates } : t)),
+    }));
+    
+    const task = get().getTask(taskId);
+    if (task) notifyListeners('TASK_UPDATED' as any, task);
+    return { success: true, newTaskId: taskId };
   },
 
   updatePriority: (taskId, priority) => {
     set((state) => ({
       tasks: state.tasks.map((t) => (t.task_id === taskId ? { ...t, priority } : t)),
     }));
+    try {
+      const warehouseStore = require('./warehouseStore').useWarehouseStore.getState();
+      if (warehouseStore && warehouseStore.removeAnnouncedTaskId) {
+        warehouseStore.removeAnnouncedTaskId(taskId);
+      }
+    } catch (e) {}
     const task = get().getTask(taskId);
     if (task) notifyListeners('TASK_PRIORITY_CHANGED', task);
+  },
+
+  updateTaskIneligibilityAudit: (taskId, robotId, reasons) => {
+    set((state) => ({
+      tasks: state.tasks.map((t) => {
+        if (t.task_id === taskId) {
+          const audit = t.ineligibilityAudit || {};
+          return {
+            ...t,
+            ineligibilityAudit: {
+              ...audit,
+              [robotId]: reasons,
+            },
+          };
+        }
+        return t;
+      }),
+    }));
   },
 
   getTask: (taskId) => get().tasks.find((t) => t.task_id === taskId),
@@ -437,6 +675,7 @@ export const useTaskStore = create<TaskState>()(
   },
 
   completeTask: (taskId) => {
+    const task = get().getTask(taskId);
     set((state) => ({
       tasks: state.tasks.map((t) =>
         t.task_id === taskId
@@ -448,11 +687,13 @@ export const useTaskStore = create<TaskState>()(
           : t
       ),
     }));
-    const task = get().getTask(taskId);
-    if (task) notifyListeners('TASK_COMPLETED', task);
+    releaseRobotForTask(taskId, task?.assigned_robot_id);
+    const updatedTask = get().getTask(taskId);
+    if (updatedTask) notifyListeners('TASK_COMPLETED', updatedTask);
   },
 
   failTask: (taskId, reason = 'Execution failed') => {
+    const originalTask = get().getTask(taskId);
     set((state) => ({
       tasks: state.tasks.map((t) =>
         t.task_id === taskId
@@ -465,8 +706,26 @@ export const useTaskStore = create<TaskState>()(
           : t
       ),
     }));
+    releaseRobotForTask(taskId, originalTask?.assigned_robot_id);
     const task = get().getTask(taskId);
     if (task) notifyListeners('TASK_FAILED', task, { reason });
+
+    // Phase 5 Failure Recovery Hook: If failure is recoverable, initiate decentralized recovery
+    if (originalTask && originalTask.assigned_robot_id) {
+      const isNonRecoverable = /unreachable for all amrs|invalid source|invalid target/i.test(reason);
+      if (!isNonRecoverable) {
+        try {
+          const handlePeerRobotFailure = require('../engine/recovery/FailureRecoveryManager').handlePeerRobotFailure;
+          handlePeerRobotFailure({
+            robotId: originalTask.assigned_robot_id,
+            failureType: 'ERROR',
+            currentTaskId: taskId,
+            position: { col: 5, row: 5 },
+            timestamp: Date.now(),
+          });
+        } catch (e) {}
+      }
+    }
   },
 
   reassignTask: (taskId, reason = 'Reassignment triggered') => {
@@ -527,6 +786,8 @@ export const useTaskStore = create<TaskState>()(
     return JSON.stringify(payload, null, 2);
   },
 
+  resetTasks: () => set({ tasks: INITIAL_DEMO_TASKS }),
+  clearTasks: () => set({ tasks: [] }),
   loadTasks: (jsonContent) => {
     try {
       const parsed = JSON.parse(jsonContent);
@@ -580,10 +841,6 @@ export const useTaskStore = create<TaskState>()(
     return () => {
       eventListeners.delete(listener);
     };
-  },
-  
-  clearTasks: () => {
-    set({ tasks: [] });
   }
 }),
   {
