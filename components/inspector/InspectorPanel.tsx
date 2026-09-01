@@ -133,7 +133,6 @@ export const InspectorPanel: React.FC = () => {
 
   const p2pNode = selectedRobot ? p2pNodes[selectedRobot.id] : null;
   const nodeId = p2pNode ? p2pNode.nodeId : `amr-node-${selectedRobot?.id.toLowerCase()}`;
-  const isOnline = p2pNode ? p2pNode.isOnline : (selectedRobot?.isOnline ?? true);
 
   return (
     <div className="w-[240px] bg-panel border-l border-border flex flex-col flex-shrink-0">
@@ -240,10 +239,9 @@ export const InspectorPanel: React.FC = () => {
                 </div>
               </div>
             </div>
-            {transformFields('ROBOT', selectedRobot.id, selectedRobot.row, selectedRobot.col, 1, 1, selectedRobot)}in
+            {transformFields('ROBOT', selectedRobot.id, selectedRobot.row, selectedRobot.col, 1, 1, selectedRobot)}
           </div>
         )}
-
 
         {selectedObstacle && (
           <div className="flex flex-col gap-4">
