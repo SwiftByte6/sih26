@@ -263,6 +263,7 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
       }
       if (message.type === 'TASK_ANNOUNCEMENT' && message.payload?.task) {
         const task = message.payload.task;
+        console.log(`[P2P] announcement received by ${targetNode.robotId} for task ${task.task_id}`);
         const incomingRound = message.payload.allocationRound || 1;
         targetNode.knownTasks = targetNode.knownTasks || {};
 
@@ -270,6 +271,7 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
         const warehouseStore = require('../../store/warehouseStore').useWarehouseStore.getState();
         const robotState = warehouseStore.robots.find((r: any) => r.id === targetNode.robotId);
         const robotStateFree = robotState && (robotState.state === 'WAITING' || robotState.state === 'IDLE') && !robotState.currentTask && !robotState.currentTaskId;
+        if (robotStateFree) console.log(`[P2P] ${targetNode.robotId} is considered FREE`);
 
         // Reset knowledge if task is new, unclaimed, in a newer allocation round, or when robot is free for re-evaluation
         const isNewerRound = existingKnowledge && (incomingRound > (existingKnowledge.allocationRound || 0));
@@ -278,6 +280,7 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
             isNewerRound || robotStateFree || (message.timestamp - (existingKnowledge.announcementTimestamp || 0) > 2500)
           )
         );
+        console.log(`[P2P] ${targetNode.robotId} shouldResetKnowledge=${!!shouldResetKnowledge} (isNewerRound=${!!isNewerRound})`);
 
         if (shouldResetKnowledge) {
           targetNode.knownTasks[task.task_id] = {
@@ -304,6 +307,7 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
               warehouseStore.pois,
               warehouseStore.shelves
             );
+            console.log(`[P2P] eligibility result for ${targetNode.robotId} on ${task.task_id}: ${evalResult.eligible ? 'ELIGIBLE' : 'INELIGIBLE'} - ${evalResult.ineligibilityReasons?.join(',')}`);
             
             const taskKnowledge = targetNode.knownTasks[task.task_id];
             taskKnowledge.evaluation = evalResult;
@@ -332,6 +336,7 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
 
             // Phase 4C: If eligible and bid not yet sent, AMR broadcasts its TASK_BID to ALL peers
             if (evalResult.eligible && !taskKnowledge.myBidSent) {
+              console.log(`[P2P] bid sent (ELIGIBLE) by ${targetNode.robotId} for ${task.task_id}`);
               taskKnowledge.myBidSent = true;
               taskKnowledge.allocationState = 'BIDDING';
               setTimeout(() => {
@@ -350,13 +355,18 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
                   body: `TASK_BID: ${task.task_id} (Round ${taskKnowledge.allocationRound || 1}) | Suitability: ${evalResult.suitabilityScore}/100 | Dist: ${evalResult.distanceToPickup}m`,
                 });
               }, 0);
-            } else if (!evalResult.eligible) {
+            } else if (!evalResult.eligible && !taskKnowledge.myBidSent) {
+              console.log(`[P2P] bid sent (INELIGIBLE) by ${targetNode.robotId} for ${task.task_id}`);
+              taskKnowledge.myBidSent = true;
               setTimeout(() => {
-                this.broadcastMessage(targetNode.robotId, 'STATUS_UPDATE', {
+                this.broadcastMessage(targetNode.robotId, 'TASK_BID', {
+                  taskId: task.task_id,
                   robotId: targetNode.robotId,
-                  status: robotState.state,
-                  battery: robotState.battery,
-                  body: `EVALUATION [${task.task_id}]: Ineligible -> ${evalResult.ineligibilityReasons.join(' | ')}`,
+                  allocationRound: taskKnowledge.allocationRound || 1,
+                  eligible: false,
+                  suitabilityScore: 0,
+                  evaluation: evalResult,
+                  body: `TASK_BID: ${task.task_id} (Round ${taskKnowledge.allocationRound || 1}) | INELIGIBLE -> ${evalResult.ineligibilityReasons.join(' | ')}`,
                 });
               }, 0);
             }
@@ -385,18 +395,20 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
 
             // Fix 3 & Phase 5: Wait for expected bids from online, non-failed nodes before determining winner
             const warehouseStoreState = require('../../store/warehouseStore').useWarehouseStore.getState();
-            const onlineNodesCount = Object.values(this.nodes).filter((n) => {
+            const onlineNodesCount = Array.from(this.nodes.values()).filter((n) => {
               if (!n.isOnline) return false;
               const r = warehouseStoreState.robots.find((bot: any) => bot.id === n.robotId);
               return r && r.isOnline !== false && r.state !== 'ERROR';
             }).length;
 
             const receivedBidsCount = Object.keys(taskKnowledge.peerBids).length;
+            console.log(`[P2P] bids collected by ${targetNode.robotId} for ${taskId}: ${receivedBidsCount} / ${onlineNodesCount}`);
 
             if (!taskKnowledge.myProposalSent && !taskKnowledge.claimedBy && receivedBidsCount >= Math.max(1, onlineNodesCount)) {
               try {
                 const determineCandidateWinner = require('../evaluation/TaskEvaluator').determineCandidateWinner;
                 const candidateWinner = determineCandidateWinner(taskKnowledge.evaluation, taskKnowledge.peerBids);
+                console.log(`[P2P] winner proposal calculated by ${targetNode.robotId} for ${taskId}: ${candidateWinner}`);
                 if (candidateWinner) {
                   taskKnowledge.myProposalSent = true;
                   taskKnowledge.allocationState = 'PROPOSING';
@@ -410,6 +422,7 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
                   };
 
                   setTimeout(() => {
+                    console.log(`[P2P] winner proposal sent by ${targetNode.robotId} for ${taskId} (winner: ${candidateWinner})`);
                     this.broadcastMessage(targetNode.robotId, 'TASK_WINNER_PROPOSAL', {
                       taskId,
                       proposedWinnerId: candidateWinner,
@@ -442,19 +455,27 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
             };
 
             // Fix 5: Asynchronous consensus check
+            const warehouseStoreState = require('../../store/warehouseStore').useWarehouseStore.getState();
+            const onlineNodesCount = Array.from(this.nodes.values()).filter((n) => {
+              if (!n.isOnline) return false;
+              const r = warehouseStoreState.robots.find((bot: any) => bot.id === n.robotId);
+              return r && r.isOnline !== false && r.state !== 'ERROR';
+            }).length;
+
             const proposals = Object.values(taskKnowledge.peerProposals);
-            const eligibleBidsCount = Object.values(taskKnowledge.peerBids).filter((b) => b.eligible).length;
-            const expectedProposalsCount = Math.max(1, eligibleBidsCount);
+            const expectedProposalsCount = Math.max(1, onlineNodesCount);
 
             const unanimousConsensus = proposals.length >= expectedProposalsCount && proposals.every((p) => p.proposedWinnerId === proposedWinnerId);
+            console.log(`[P2P] consensus check by ${targetNode.robotId} for ${taskId}: proposals=${proposals.length}/${expectedProposalsCount} unanimous=${unanimousConsensus}`);
 
             if (unanimousConsensus && !taskKnowledge.claimedBy) {
               taskKnowledge.allocationState = 'CONSENSUS';
               const warehouseStoreState = require('../../store/warehouseStore').useWarehouseStore.getState();
               const myRobot = warehouseStoreState.robots.find((r: any) => r.id === targetNode.robotId);
-              const isFreeToClaim = myRobot && (myRobot.state === 'WAITING' || myRobot.state === 'IDLE') && !myRobot.currentTask;
+              const isFreeToClaim = myRobot && (myRobot.state === 'WAITING' || myRobot.state === 'IDLE') && !myRobot.currentTask && !myRobot.currentTaskId;
 
               if (targetNode.robotId === proposedWinnerId && isFreeToClaim) {
+                console.log(`[P2P] task claimed by ${targetNode.robotId} for ${taskId}`);
                 taskKnowledge.claimedBy = proposedWinnerId;
                 taskKnowledge.status = 'CLAIMED';
                 taskKnowledge.allocationState = 'CLAIMED';
@@ -476,6 +497,7 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
       if (message.type === 'TASK_CLAIMED' && message.payload?.taskId) {
         const taskId = message.payload.taskId;
         const ownerRobotId = message.payload.ownerRobotId;
+        console.log(`[P2P] TASK_CLAIMED received by ${targetNode.robotId} for ${taskId} (owner: ${ownerRobotId})`);
         targetNode.knownTasks = targetNode.knownTasks || {};
         if (targetNode.knownTasks[taskId]) {
           targetNode.knownTasks[taskId].claimedBy = ownerRobotId;
@@ -489,6 +511,7 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
           const useWarehouseStore = require('../../store/warehouseStore').useWarehouseStore.getState;
           
           const taskStore = useTaskStore();
+          console.log(`[P2P] assignment result triggering for ${taskId}`);
           taskStore.receiveAssignmentResult(taskId, ownerRobotId);
 
           const warehouseStore = useWarehouseStore();
@@ -627,6 +650,10 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
         delete node.knownTasks[taskId];
       }
     });
+  }
+
+  clearAllNodes(): void {
+    this.nodes.clear();
   }
 
   resetNetwork(): void {

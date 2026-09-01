@@ -243,6 +243,29 @@ export function runDecentralizedAllocationEndToEndTestSuite(): E2ETestSummary {
     details: 'Winning AMR receiving assigned_robot_id triggers A* path calculation',
   });
 
+  // TEST 16: Edge Case H - Busy Robot Deadlock Prevention
+  const netH = new SimulatedP2PNetwork();
+  const h1 = netH.registerNode('AMR-01');
+  const h2 = netH.registerNode('AMR-02');
+  
+  const taskH: Task = { ...sampleTask, task_id: 'T-EDGE-H' };
+  netH.broadcastMessage('TASK_DISPATCH', 'TASK_ANNOUNCEMENT', { taskId: 'T-EDGE-H', task: taskH });
+  // Both robots evaluate as busy/ineligible, so they send eligible: false
+  netH.broadcastMessage('AMR-01', 'TASK_BID', { taskId: 'T-EDGE-H', robotId: 'AMR-01', eligible: false, suitabilityScore: 0 });
+  netH.broadcastMessage('AMR-02', 'TASK_BID', { taskId: 'T-EDGE-H', robotId: 'AMR-02', eligible: false, suitabilityScore: 0 });
+  
+  // They should process the bids. The total received bids is 2, which equals online nodes.
+  const bidsCount = Object.keys(h1.knownTasks['T-EDGE-H']?.peerBids || {}).length;
+  // Because both are ineligible, determineCandidateWinner will return null and NO consensus is reached.
+  const candWinnerH = determineCandidateWinner(undefined, h1.knownTasks['T-EDGE-H']?.peerBids || {});
+  
+  const t16Passed = bidsCount === 2 && candWinnerH === null;
+  results.push({
+    testName: 'TEST 16 (Edge Case H): Busy Robot Deadlock Prevention (eligible: false bids)',
+    passed: t16Passed,
+    details: t16Passed ? 'Ineligible AMRs safely registered bids, preventing consensus deadlock' : 'Failed: Bids missing or false winner selected',
+  });
+
   const passCount = results.filter((r) => r.passed).length;
   return {
     timestamp: new Date().toISOString(),

@@ -197,6 +197,7 @@ const releaseRobotForTask = (taskId: string, robotId?: string | null) => {
       const robots = warehouseStore.getState().robots;
       const updatedRobots = robots.map((r: any) => {
         if ((robotId && r.id === robotId) || r.currentTask === taskId || r.currentTaskId === taskId) {
+          console.log(`[P2P] Robot ${r.id} released from task ${taskId}, becoming WAITING`);
           return {
             ...r,
             currentTask: null,
