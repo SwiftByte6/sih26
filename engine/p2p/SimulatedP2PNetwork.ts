@@ -77,9 +77,25 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
       sender.history.push(message);
       sender.stats.messagesSent++;
       if (message.type === 'HEARTBEAT') {
-        sender.stats.heartbeatsSent++;
         sender.lastHeartbeatSent = message.timestamp;
       }
+    }
+
+    if (message.type !== 'HEARTBEAT') {
+      try {
+        const bodyText = typeof message.payload === 'string' ? message.payload : message.payload?.body || message.payload?.status || message.type;
+        const category = (message.type.startsWith('TASK_') ? 'TASK' : message.type === 'STATUS_UPDATE' ? 'SYSTEM' : 'COORDINATION') as any;
+        const warehouseStore = require('../../store/warehouseStore').useWarehouseStore.getState();
+        warehouseStore.addCommunication({
+          id: `COMM-${message.timestamp}-${Math.random().toString(36).substring(2, 7)}`,
+          timestamp: message.timestamp,
+          sender: message.senderId,
+          receiver: message.receiverId,
+          category,
+          priority: 'NORMAL',
+          message: `[${message.type}] ${bodyText}`,
+        });
+      } catch (e) {}
     }
 
     const handleTargetNodeReceive = (targetNode: AmrAgentNode) => {
@@ -251,11 +267,15 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
         targetNode.knownTasks = targetNode.knownTasks || {};
 
         const existingKnowledge = targetNode.knownTasks[task.task_id];
-        // Fix 1 & Fix 4: Only reset knowledge if task is new, unclaimed for > 4s, or explicitly in a newer allocation round
+        const warehouseStore = require('../../store/warehouseStore').useWarehouseStore.getState();
+        const robotState = warehouseStore.robots.find((r: any) => r.id === targetNode.robotId);
+        const robotStateFree = robotState && (robotState.state === 'WAITING' || robotState.state === 'IDLE') && !robotState.currentTask && !robotState.currentTaskId;
+
+        // Reset knowledge if task is new, unclaimed, in a newer allocation round, or when robot is free for re-evaluation
         const isNewerRound = existingKnowledge && (incomingRound > (existingKnowledge.allocationRound || 0));
         const shouldResetKnowledge = !existingKnowledge || (
           !existingKnowledge.claimedBy && (
-            isNewerRound || (message.timestamp - (existingKnowledge.announcementTimestamp || 0) > 4000)
+            isNewerRound || robotStateFree || (message.timestamp - (existingKnowledge.announcementTimestamp || 0) > 2500)
           )
         );
 

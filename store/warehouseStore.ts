@@ -340,6 +340,7 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
       activeCommLinks: [],
       collisionsCount: 0,
     });
+    useP2PStore.getState().initializeNetwork(cloned.robots.map((r) => r.id));
   },
   setScale: (scale) => set({ scale }),
   setPan: (pan) => set({ pan }),
@@ -691,7 +692,6 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
       appMode: 'PLAY',
       pendingPlaceType: null, pendingAssetUrl: null,
     });
-    useTaskStore.getState().resetTasks();
     return { ok: true, issues };
   },
 
@@ -829,10 +829,15 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
 
     let taskToAnnounce = unassignedTasks.find((t) => !announcedTaskIds.has(t.task_id));
     if (!taskToAnnounce) {
-      taskToAnnounce = unassignedTasks.find((t) => {
-        const lastTime = announcedTaskTimestamps.get(t.task_id);
-        return !lastTime || (now - lastTime > 4000);
-      });
+      const hasFreeRobot = state.robots.some(
+        (r) => (r.state === 'WAITING' || r.state === 'IDLE') && !r.currentTask && !r.currentTaskId && (r.isOnline ?? true)
+      );
+      if (hasFreeRobot) {
+        taskToAnnounce = unassignedTasks.find((t) => {
+          const lastTime = announcedTaskTimestamps.get(t.task_id);
+          return !lastTime || (now - lastTime > 3000);
+        });
+      }
     }
 
     if (taskToAnnounce) {
@@ -987,13 +992,6 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
               // Just reached a point, no active task phase
               newState = 'WAITING';
             }
-
-            if (newState === 'WAITING') {
-              unassignedTasks.forEach((pt) => {
-                announcedTaskIds.delete(pt.task_id);
-                announcedTaskTimestamps.delete(pt.task_id);
-              });
-            }
           }
           
           // Battery warning & Phase 7 Dynamic Handover Trigger
@@ -1062,3 +1060,6 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
   }),
 
 }));
+
+// Initialize P2P Network with default robots on module load
+useP2PStore.getState().initializeNetwork(demoWarehouse.robots.map((r) => r.id));

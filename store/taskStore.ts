@@ -189,6 +189,30 @@ export const sortPendingTasksByPriority = (pendingTasks: Task[]): Task[] => {
   });
 };
 
+// Helper to release robot when task completes, fails, or is cancelled
+const releaseRobotForTask = (taskId: string, robotId?: string | null) => {
+  try {
+    const warehouseStore = require('./warehouseStore').useWarehouseStore;
+    if (warehouseStore) {
+      const robots = warehouseStore.getState().robots;
+      const updatedRobots = robots.map((r: any) => {
+        if ((robotId && r.id === robotId) || r.currentTask === taskId || r.currentTaskId === taskId) {
+          return {
+            ...r,
+            currentTask: null,
+            currentTaskId: null,
+            taskPhase: null,
+            path: [],
+            state: r.state === 'ERROR' ? 'ERROR' : 'WAITING',
+          };
+        }
+        return r;
+      });
+      warehouseStore.setState({ robots: updatedRobots });
+    }
+  } catch (e) {}
+};
+
 export interface ImportedRowValidation {
   valid: boolean;
   error?: string;
@@ -646,6 +670,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   },
 
   completeTask: (taskId) => {
+    const task = get().getTask(taskId);
     set((state) => ({
       tasks: state.tasks.map((t) =>
         t.task_id === taskId
@@ -657,8 +682,9 @@ export const useTaskStore = create<TaskState>((set, get) => ({
           : t
       ),
     }));
-    const task = get().getTask(taskId);
-    if (task) notifyListeners('TASK_COMPLETED', task);
+    releaseRobotForTask(taskId, task?.assigned_robot_id);
+    const updatedTask = get().getTask(taskId);
+    if (updatedTask) notifyListeners('TASK_COMPLETED', updatedTask);
   },
 
   failTask: (taskId, reason = 'Execution failed') => {
@@ -675,6 +701,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
           : t
       ),
     }));
+    releaseRobotForTask(taskId, originalTask?.assigned_robot_id);
     const task = get().getTask(taskId);
     if (task) notifyListeners('TASK_FAILED', task, { reason });
 
