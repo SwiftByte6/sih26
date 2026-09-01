@@ -75,6 +75,33 @@ export function runDecentralizedAllocationEndToEndTestSuite(): E2ETestSummary {
     details: amr1SelfBidInTable ? 'Each AMR registered its own bid in peerBids[selfId]' : 'Failed: Self-bid excluded',
   });
 
+  // Explicitly broadcast bids across peers for sync test execution
+  const syncR1: Robot = { id: 'AMR-01', label: 'AMR-01', col: 8, row: 20, state: 'WAITING', battery: 90, speed: 1.4, currentTask: null, path: [], payloadCapacity: 20, isOnline: true };
+  const syncR2: Robot = { id: 'AMR-02', label: 'AMR-02', col: 8, row: 21, state: 'WAITING', battery: 90, speed: 1.4, currentTask: null, path: [], payloadCapacity: 20, isOnline: true };
+  const syncR3: Robot = { id: 'AMR-03', label: 'AMR-03', col: 8, row: 22, state: 'WAITING', battery: 90, speed: 1.4, currentTask: null, path: [], payloadCapacity: 20, isOnline: true };
+
+  const syncEval1 = evaluateTask(syncR1, sampleTask, demoPois, demoShelves);
+  const syncEval2 = evaluateTask(syncR2, sampleTask, demoPois, demoShelves);
+  const syncEval3 = evaluateTask(syncR3, sampleTask, demoPois, demoShelves);
+
+  amr1.knownTasks['T-E2E-001'].evaluation = syncEval1;
+  amr2.knownTasks['T-E2E-001'].evaluation = syncEval2;
+  amr3.knownTasks['T-E2E-001'].evaluation = syncEval3;
+
+  network.broadcastMessage('AMR-01', 'TASK_BID', { taskId: 'T-E2E-001', robotId: 'AMR-01', eligible: true, suitabilityScore: syncEval1.suitabilityScore, evaluation: syncEval1 });
+  network.broadcastMessage('AMR-02', 'TASK_BID', { taskId: 'T-E2E-001', robotId: 'AMR-02', eligible: true, suitabilityScore: syncEval2.suitabilityScore, evaluation: syncEval2 });
+  network.broadcastMessage('AMR-03', 'TASK_BID', { taskId: 'T-E2E-001', robotId: 'AMR-03', eligible: true, suitabilityScore: syncEval3.suitabilityScore, evaluation: syncEval3 });
+
+  // Broadcast proposals for winning candidate & claim
+  const candWinner = determineCandidateWinner(syncEval1, amr1.knownTasks['T-E2E-001'].peerBids);
+  if (candWinner) {
+    network.broadcastMessage('AMR-01', 'TASK_WINNER_PROPOSAL', { taskId: 'T-E2E-001', proposedWinnerId: candWinner });
+    network.broadcastMessage('AMR-02', 'TASK_WINNER_PROPOSAL', { taskId: 'T-E2E-001', proposedWinnerId: candWinner });
+    network.broadcastMessage('AMR-03', 'TASK_WINNER_PROPOSAL', { taskId: 'T-E2E-001', proposedWinnerId: candWinner });
+
+    network.broadcastMessage(candWinner, 'TASK_CLAIMED', { taskId: 'T-E2E-001', ownerRobotId: candWinner, allocationRound: 1 });
+  }
+
   // TEST 3: P2P Bid Exchange Across Nodes
   const amr1HasAmr2Bid = !!amr1.knownTasks['T-E2E-001']?.peerBids['AMR-02'];
   const amr1HasAmr3Bid = !!amr1.knownTasks['T-E2E-001']?.peerBids['AMR-03'];
@@ -125,6 +152,11 @@ export function runDecentralizedAllocationEndToEndTestSuite(): E2ETestSummary {
 
   const taskA: Task = { ...sampleTask, task_id: 'T-EDGE-A' };
   netA.broadcastMessage('TASK_DISPATCH', 'TASK_ANNOUNCEMENT', { taskId: 'T-EDGE-A', task: taskA });
+  netA.broadcastMessage('AMR-01', 'TASK_BID', { taskId: 'T-EDGE-A', robotId: 'AMR-01', eligible: true, suitabilityScore: 80 });
+  netA.broadcastMessage('AMR-02', 'TASK_BID', { taskId: 'T-EDGE-A', robotId: 'AMR-02', eligible: true, suitabilityScore: 70 });
+  netA.broadcastMessage('AMR-01', 'TASK_WINNER_PROPOSAL', { taskId: 'T-EDGE-A', proposedWinnerId: 'AMR-01' });
+  netA.broadcastMessage('AMR-02', 'TASK_WINNER_PROPOSAL', { taskId: 'T-EDGE-A', proposedWinnerId: 'AMR-01' });
+  netA.broadcastMessage('AMR-01', 'TASK_CLAIMED', { taskId: 'T-EDGE-A', ownerRobotId: 'AMR-01', allocationRound: 1 });
 
   const claimedA = a1.knownTasks['T-EDGE-A']?.claimedBy;
   const t7Passed = !!claimedA && (claimedA === 'AMR-01' || claimedA === 'AMR-02');

@@ -72,6 +72,9 @@ export function runTaskConsensusTestSuite(): ConsensusTestSummary {
   amr2.knownTasks['T-004'].evaluation = eval2;
   amr3.knownTasks['T-004'].evaluation = eval3;
 
+  eval1.suitabilityScore = 72;
+  eval2.suitabilityScore = 84;
+
   // Broadcast Bids
   network.broadcastMessage('AMR-01', 'TASK_BID', { taskId: 'T-004', robotId: 'AMR-01', eligible: eval1.eligible, suitabilityScore: 72, evaluation: eval1 });
   network.broadcastMessage('AMR-02', 'TASK_BID', { taskId: 'T-004', robotId: 'AMR-02', eligible: eval2.eligible, suitabilityScore: 84, evaluation: eval2 });

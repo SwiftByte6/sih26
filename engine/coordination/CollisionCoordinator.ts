@@ -215,8 +215,9 @@ export function resolveTickCollisions(
       // Cell is currently occupied by another robot
       const occupantBlocked = blockedRobotIds.has(occupantRobotId);
 
-      // If occupant is stationary or blocked from leaving, follower MUST yield
-      if (occupantBlocked || !intents.some((i) => i.robotId === occupantRobotId && i.targetCell !== null)) {
+      // If occupant is stationary or blocked from leaving (unless yielding to this robot in head-on swap), follower MUST yield
+      const isHeadOnYieldingOccupant = blockedRobotIds.get(occupantRobotId)?.blockingRobotId === intent.robotId;
+      if (!isHeadOnYieldingOccupant && (occupantBlocked || !intents.some((i) => i.robotId === occupantRobotId && i.targetCell !== null))) {
         blockedRobotIds.set(intent.robotId, {
           blockingRobotId: occupantRobotId,
           reason: `Target cell occupied by ${occupantRobotId}`,
