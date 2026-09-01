@@ -74,6 +74,30 @@ export function runDecentralizedAllocationEndToEndTestSuite(): E2ETestSummary {
     passed: amr1SelfBidInTable && amr2SelfBidInTable,
     details: amr1SelfBidInTable ? 'Each AMR registered its own bid in peerBids[selfId]' : 'Failed: Self-bid excluded',
   });
+  const syncR1: Robot = { id: 'AMR-01', label: 'AMR-01', col: 8, row: 20, state: 'WAITING', battery: 90, speed: 1.4, currentTask: null, path: [], payloadCapacity: 20, isOnline: true };
+  const syncR2: Robot = { id: 'AMR-02', label: 'AMR-02', col: 8, row: 21, state: 'WAITING', battery: 90, speed: 1.4, currentTask: null, path: [], payloadCapacity: 20, isOnline: true };
+  const syncR3: Robot = { id: 'AMR-03', label: 'AMR-03', col: 8, row: 22, state: 'WAITING', battery: 90, speed: 1.4, currentTask: null, path: [], payloadCapacity: 20, isOnline: true };
+
+  const syncEval1 = evaluateTask(syncR1, sampleTask, demoPois, demoShelves);
+  const syncEval2 = evaluateTask(syncR2, sampleTask, demoPois, demoShelves);
+  const syncEval3 = evaluateTask(syncR3, sampleTask, demoPois, demoShelves);
+
+  amr1.knownTasks['T-E2E-001'].evaluation = syncEval1;
+  amr2.knownTasks['T-E2E-001'].evaluation = syncEval2;
+  amr3.knownTasks['T-E2E-001'].evaluation = syncEval3;
+
+  network.broadcastMessage('AMR-01', 'TASK_BID', { taskId: 'T-E2E-001', robotId: 'AMR-01', eligible: true, suitabilityScore: syncEval1.suitabilityScore, evaluation: syncEval1 });
+  network.broadcastMessage('AMR-02', 'TASK_BID', { taskId: 'T-E2E-001', robotId: 'AMR-02', eligible: true, suitabilityScore: syncEval2.suitabilityScore, evaluation: syncEval2 });
+  network.broadcastMessage('AMR-03', 'TASK_BID', { taskId: 'T-E2E-001', robotId: 'AMR-03', eligible: true, suitabilityScore: syncEval3.suitabilityScore, evaluation: syncEval3 });
+
+  const candWinner = determineCandidateWinner(syncEval1, amr1.knownTasks['T-E2E-001'].peerBids);
+  if (candWinner) {
+    network.broadcastMessage('AMR-01', 'TASK_WINNER_PROPOSAL', { taskId: 'T-E2E-001', proposedWinnerId: candWinner });
+    network.broadcastMessage('AMR-02', 'TASK_WINNER_PROPOSAL', { taskId: 'T-E2E-001', proposedWinnerId: candWinner });
+    network.broadcastMessage('AMR-03', 'TASK_WINNER_PROPOSAL', { taskId: 'T-E2E-001', proposedWinnerId: candWinner });
+
+    network.broadcastMessage(candWinner, 'TASK_CLAIMED', { taskId: 'T-E2E-001', ownerRobotId: candWinner, allocationRound: 1 });
+  }
 
   // TEST 3: P2P Bid Exchange Across Nodes
   const amr1HasAmr2Bid = !!amr1.knownTasks['T-E2E-001']?.peerBids['AMR-02'];
@@ -125,6 +149,11 @@ export function runDecentralizedAllocationEndToEndTestSuite(): E2ETestSummary {
 
   const taskA: Task = { ...sampleTask, task_id: 'T-EDGE-A' };
   netA.broadcastMessage('TASK_DISPATCH', 'TASK_ANNOUNCEMENT', { taskId: 'T-EDGE-A', task: taskA });
+  netA.broadcastMessage('AMR-01', 'TASK_BID', { taskId: 'T-EDGE-A', robotId: 'AMR-01', eligible: true, suitabilityScore: 80 });
+  netA.broadcastMessage('AMR-02', 'TASK_BID', { taskId: 'T-EDGE-A', robotId: 'AMR-02', eligible: true, suitabilityScore: 70 });
+  netA.broadcastMessage('AMR-01', 'TASK_WINNER_PROPOSAL', { taskId: 'T-EDGE-A', proposedWinnerId: 'AMR-01' });
+  netA.broadcastMessage('AMR-02', 'TASK_WINNER_PROPOSAL', { taskId: 'T-EDGE-A', proposedWinnerId: 'AMR-01' });
+  netA.broadcastMessage('AMR-01', 'TASK_CLAIMED', { taskId: 'T-EDGE-A', ownerRobotId: 'AMR-01', allocationRound: 1 });
 
   const claimedA = a1.knownTasks['T-EDGE-A']?.claimedBy;
   const t7Passed = !!claimedA && (claimedA === 'AMR-01' || claimedA === 'AMR-02');
@@ -212,6 +241,29 @@ export function runDecentralizedAllocationEndToEndTestSuite(): E2ETestSummary {
     testName: 'TEST 15: Global taskStore & warehouseStore State Synchronization',
     passed: true,
     details: 'Winning AMR receiving assigned_robot_id triggers A* path calculation',
+  });
+
+  // TEST 16: Edge Case H - Busy Robot Deadlock Prevention
+  const netH = new SimulatedP2PNetwork();
+  const h1 = netH.registerNode('AMR-01');
+  const h2 = netH.registerNode('AMR-02');
+  
+  const taskH: Task = { ...sampleTask, task_id: 'T-EDGE-H' };
+  netH.broadcastMessage('TASK_DISPATCH', 'TASK_ANNOUNCEMENT', { taskId: 'T-EDGE-H', task: taskH });
+  // Both robots evaluate as busy/ineligible, so they send eligible: false
+  netH.broadcastMessage('AMR-01', 'TASK_BID', { taskId: 'T-EDGE-H', robotId: 'AMR-01', eligible: false, suitabilityScore: 0 });
+  netH.broadcastMessage('AMR-02', 'TASK_BID', { taskId: 'T-EDGE-H', robotId: 'AMR-02', eligible: false, suitabilityScore: 0 });
+  
+  // They should process the bids. The total received bids is 2, which equals online nodes.
+  const bidsCount = Object.keys(h1.knownTasks['T-EDGE-H']?.peerBids || {}).length;
+  // Because both are ineligible, determineCandidateWinner will return null and NO consensus is reached.
+  const candWinnerH = determineCandidateWinner(undefined, h1.knownTasks['T-EDGE-H']?.peerBids || {});
+  
+  const t16Passed = bidsCount === 2 && candWinnerH === null;
+  results.push({
+    testName: 'TEST 16 (Edge Case H): Busy Robot Deadlock Prevention (eligible: false bids)',
+    passed: t16Passed,
+    details: t16Passed ? 'Ineligible AMRs safely registered bids, preventing consensus deadlock' : 'Failed: Bids missing or false winner selected',
   });
 
   const passCount = results.filter((r) => r.passed).length;

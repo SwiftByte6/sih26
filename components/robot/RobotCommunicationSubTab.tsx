@@ -1,13 +1,36 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useWarehouseStore } from '../../store/warehouseStore';
 import { useP2PStore } from '../../store/p2pStore';
-import { Bot, Wifi, WifiOff, BatteryCharging, Zap } from 'lucide-react';
+import { Bot, Wifi, WifiOff, BatteryCharging, Copy, Check } from 'lucide-react';
 
 export const RobotCommunicationSubTab: React.FC = () => {
   const { robots, selectedItemId, setSelectedItem } = useWarehouseStore();
   const p2pNodes = useP2PStore((state) => state.nodes);
+  const [copiedRobotId, setCopiedRobotId] = useState<string | null>(null);
+
+  const copyDirectLog = (robotId: string, historyMsgs: any[]) => {
+    const lines = [
+      `${robotId} P2P COMMUNICATION LOG`,
+      '--------------------------------',
+    ];
+    historyMsgs.forEach((msg) => {
+      const timeStr = new Date(msg.timestamp).toLocaleTimeString([], { hour12: false });
+      const isOutgoing = msg.senderId === robotId;
+      const dirSymbol = isOutgoing ? 'SENT →' : 'RECEIVED ←';
+      const targetStr = msg.receiverId === 'ALL' ? 'ALL' : isOutgoing ? msg.receiverId : msg.senderId;
+      const payloadObj = msg.payload || {};
+      const taskIdStr = payloadObj.taskId ? ` | ${payloadObj.taskId}` : '';
+      const scoreStr = payloadObj.suitabilityScore !== undefined ? ` | Score: ${payloadObj.suitabilityScore}` : '';
+      const winnerStr = payloadObj.proposedWinnerId ? ` | Proposed: ${payloadObj.proposedWinnerId}` : payloadObj.ownerRobotId ? ` | ClaimedBy: ${payloadObj.ownerRobotId}` : '';
+      lines.push(`[${timeStr}] ${dirSymbol} ${targetStr} | ${msg.type}${taskIdStr}${scoreStr}${winnerStr}`);
+    });
+    const fullText = lines.join('\n');
+    navigator.clipboard.writeText(fullText);
+    setCopiedRobotId(robotId);
+    setTimeout(() => setCopiedRobotId(null), 2000);
+  };
 
   const getStatusBadge = (state: string) => {
     switch (state) {
@@ -109,7 +132,27 @@ export const RobotCommunicationSubTab: React.FC = () => {
 
                 <div className="text-[9px] font-bold tracking-wider text-slate-400 uppercase mb-1 flex justify-between items-center">
                   <span>{robot.id} P2P Direct Log</span>
-                  <span className="text-emerald-400 font-mono text-[9px]">{history.length} msgs</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-emerald-400 font-mono text-[9px]">{history.length} msgs</span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        copyDirectLog(robot.id, history);
+                      }}
+                      className="flex items-center gap-1 text-[8.5px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white border border-slate-700 transition-colors"
+                      title="Copy P2P Communication Log to Clipboard"
+                    >
+                      {copiedRobotId === robot.id ? (
+                        <span className="text-emerald-400 font-semibold flex items-center gap-0.5">
+                          <Check size={9} /> Copied!
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-0.5">
+                          <Copy size={9} /> COPY
+                        </span>
+                      )}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex-1 overflow-y-auto flex flex-col gap-1 font-mono text-[10px] pr-1">

@@ -41,6 +41,7 @@ export const useP2PStore = create<P2PState>((set, get) => ({
   testSummary: null,
 
   initializeNetwork: (robotIds) => {
+    networkInstance.clearAllNodes();
     robotIds.forEach((id) => networkInstance.registerNode(id));
     const updatedNodes: Record<string, AmrAgentNode> = {};
     networkInstance.getAllNodes().forEach((node) => {

@@ -340,6 +340,7 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
       activeCommLinks: [],
       collisionsCount: 0,
     });
+    useP2PStore.getState().initializeNetwork(cloned.robots.map((r) => r.id));
   },
   setScale: (scale) => set({ scale }),
   setPan: (pan) => set({ pan }),
@@ -490,20 +491,50 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
     };
   }),
 
-  assignTaskToRobot: (robotId, task) => set((state) => ({
-    robots: state.robots.map((r) =>
-      r.id === robotId
-        ? {
+  assignTaskToRobot: (robotId, task) => set((state) => {
+    console.log(`[WAREHOUSE] assignTaskToRobot called for robot ${robotId} and task ${task.task_id}`);
+    const pickupCoord = resolveLocationCoordinates(task.pickup_point, state.pois, state.shelves);
+    const dropCoord = resolveLocationCoordinates(task.drop_point, state.pois, state.shelves);
+    
+    return {
+      robots: state.robots.map((r) => {
+        if (r.id === robotId) {
+          let newPath = r.path;
+          let newState = r.state;
+          if (pickupCoord && dropCoord) {
+            newPath = findPathAStar(state, r.row, r.col, pickupCoord.row, pickupCoord.col);
+            console.log(`[WAREHOUSE] route generated for ${robotId} to ${task.pickup_point}: path length ${newPath.length}`);
+            if (newPath.length > 0) {
+              newState = 'MOVING';
+              console.log(`[WAREHOUSE] robot state changed to MOVING for ${robotId}`);
+            } else {
+              console.error(`[P2P ERROR] Robot ${robotId} claimed task ${task.task_id} but A* found NO PATH to pickup ${task.pickup_point}`);
+              setTimeout(() => {
+                useTaskStore.getState().failTask(task.task_id, 'No path to pickup');
+                useP2PStore.getState().sendDirectMessage(r.id, 'SYSTEM', 'TEXT', { body: `Cannot find path to pickup ${pickupCoord.label}` });
+              }, 0);
+            }
+          } else {
+            console.error(`[P2P ERROR] Robot ${robotId} claimed task ${task.task_id} but coordinates could not be resolved! Pickup: ${!!pickupCoord}, Drop: ${!!dropCoord}`);
+            setTimeout(() => {
+              useTaskStore.getState().failTask(task.task_id, 'Invalid pickup or drop location coordinates');
+            }, 0);
+          }
+          return {
             ...r,
-            currentTask: task.pickup_point?.label ? `Pickup at ${task.pickup_point.label}` : 'Task Assigned',
+            currentTask: pickupCoord ? `Pickup at ${pickupCoord.label}` : 'Task Assigned',
             currentTaskId: task.task_id,
             taskPhase: 'TO_PICKUP',
-            pickupPoint: task.pickup_point,
-            dropPoint: task.drop_point,
-          }
-        : r
-    ),
-  })),
+            pickupPoint: pickupCoord,
+            dropPoint: dropCoord,
+            path: newPath,
+            state: newState,
+          };
+        }
+        return r;
+      }),
+    };
+  }),
   removeAnnouncedTaskId: (taskId: string) => {
     announcedTaskIds.delete(taskId);
     announcedTaskTimestamps.delete(taskId);
@@ -691,7 +722,6 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
       appMode: 'PLAY',
       pendingPlaceType: null, pendingAssetUrl: null,
     });
-    useTaskStore.getState().resetTasks();
     return { ok: true, issues };
   },
 
@@ -739,6 +769,13 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
 
     const now = Date.now();
     const p2pStore = useP2PStore.getState();
+
+    // Ensure ALL robots in current layout are registered in P2P Network
+    state.robots.forEach((robot) => {
+      if (!p2pStore.network.getNode(robot.id)) {
+        p2pStore.network.registerNode(robot.id);
+      }
+    });
 
     // Process P2P Heartbeats & Peer Discovery in Simulated Network
     p2pStore.processHeartbeats();
@@ -829,13 +866,22 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
 
     let taskToAnnounce = unassignedTasks.find((t) => !announcedTaskIds.has(t.task_id));
     if (!taskToAnnounce) {
-      taskToAnnounce = unassignedTasks.find((t) => {
-        const lastTime = announcedTaskTimestamps.get(t.task_id);
-        return !lastTime || (now - lastTime > 4000);
-      });
+      const hasFreeRobot = state.robots.some(
+        (r) => (r.state === 'WAITING' || r.state === 'IDLE') && !r.currentTask && !r.currentTaskId && (r.isOnline ?? true)
+      );
+      if (hasFreeRobot) {
+        taskToAnnounce = unassignedTasks.find((t) => {
+          const lastTime = announcedTaskTimestamps.get(t.task_id);
+          const timeSince = lastTime ? (now - lastTime) : 0;
+          const shouldReannounce = !lastTime || (now - lastTime > 3000);
+          console.log(`[P2P] Checking unassigned task ${t.task_id}. hasFreeRobot=true. lastTime=${lastTime}. timeSince=${timeSince}. shouldReannounce=${shouldReannounce}`);
+          return shouldReannounce;
+        });
+      }
     }
 
     if (taskToAnnounce) {
+      console.log(`[P2P] announcement sent for task ${taskToAnnounce.task_id}`);
       announcedTaskIds.add(taskToAnnounce.task_id);
       announcedTaskTimestamps.set(taskToAnnounce.task_id, now);
       const currentRound = (taskAllocationRounds.get(taskToAnnounce.task_id) || 0) + 1;
@@ -890,52 +936,6 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
     });
 
     const updatedRobots = state.robots.map(robot => {
-      // Robot is idle/waiting -> assign new task
-      if (robot.state === 'WAITING' || (robot.state !== 'MOVING' && robot.state !== 'WAITING_FOR_PATH_CLEARANCE' && robot.path.length === 0)) {
-        const pendingTasks = taskStore.getPendingTasks();
-        let assignedTask = null;
-        let pickupCoord = null;
-        let dropCoord = null;
-
-        for (const t of pendingTasks) {
-          // Bypass legacy random assignment for tasks participating in P2P decentralized allocation
-          if (announcedTaskIds.has(t.task_id)) {
-            continue;
-          }
-          pickupCoord = findLocationCoordinates(t.pickup_point);
-          dropCoord = findLocationCoordinates(t.drop_point);
-          if (pickupCoord && dropCoord && t.assigned_robot_id === null) {
-            assignedTask = t;
-            break;
-          }
-        }
-
-        if (assignedTask && pickupCoord && dropCoord) {
-          taskStore.receiveAssignmentResult(assignedTask.task_id, robot.id);
-          const newPath = findPathAStar(state, robot.row, robot.col, pickupCoord.row, pickupCoord.col);
-          
-          if (newPath.length > 0) {
-            p2pStore.sendDirectMessage('SYSTEM', robot.id, 'TEXT', { body: `Task assigned: [${assignedTask.task_id}] Pickup at ${pickupCoord.label}` });
-            p2pStore.broadcastMessage(robot.id, 'TEXT', { body: `Heading to pickup ${pickupCoord.label}` });
-            newLinks.push({ from: robot.id, to: 'ALL', expires: now + 2000 });
-            return { 
-              ...robot, 
-              path: newPath, 
-              state: 'MOVING' as const, 
-              currentTask: assignedTask.task_id,
-              currentTaskId: assignedTask.task_id,
-              taskPhase: 'TO_PICKUP' as const,
-              pickupPoint: pickupCoord,
-              dropPoint: dropCoord
-            };
-          } else {
-            // Pathfinding failed, fail task
-            taskStore.failTask(assignedTask.task_id, 'No path to pickup');
-            p2pStore.sendDirectMessage(robot.id, 'SYSTEM', 'TEXT', { body: `Cannot find path to pickup ${pickupCoord.label}` });
-          }
-        }
-      }
-
       if ((robot.state === 'MOVING' || robot.state === 'WAITING_FOR_PATH_CLEARANCE') && robot.path.length > 0) {
         // Check if robot is blocked by collision coordinator
         if (collisionResolution.blockedRobotIds.has(robot.id)) {
@@ -986,13 +986,6 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
             } else {
               // Just reached a point, no active task phase
               newState = 'WAITING';
-            }
-
-            if (newState === 'WAITING') {
-              unassignedTasks.forEach((pt) => {
-                announcedTaskIds.delete(pt.task_id);
-                announcedTaskTimestamps.delete(pt.task_id);
-              });
             }
           }
           
@@ -1062,3 +1055,6 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
   }),
 
 }));
+
+// Initialize P2P Network with default robots on module load
+useP2PStore.getState().initializeNetwork(demoWarehouse.robots.map((r) => r.id));
