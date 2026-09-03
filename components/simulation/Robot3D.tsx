@@ -34,10 +34,18 @@ export const Robot3D: React.FC<Props> = ({ robot, cellSize, onOrbitLock }) => {
   const gridRows = useWarehouseStore((s) => s.gridRows);
   const gridCols = useWarehouseStore((s) => s.gridCols);
   const groupRef = useRef<THREE.Group>(null);
-  const prevPos = useRef({ x: 0, z: 0 });
+  const isInitializedRef = useRef(false);
+  const [animState, setAnimState] = React.useState<'IDLE' | 'MOVING' | 'WAITING' | 'CHARGING' | 'ERROR'>('IDLE');
 
   const target = simulationToWorld(robot.row, robot.col, cellSize);
   const statusColor = STATE_COLORS[robot.state] || '#6b7280';
+
+  const nextWaypointTarget = useMemo(() => {
+    if (robot.path && robot.path.length > 0) {
+      return simulationToWorld(robot.path[0].row, robot.path[0].col, cellSize);
+    }
+    return target;
+  }, [robot.path, robot.row, robot.col, cellSize, target]);
 
   const obstacleAhead = useMemo(() => {
     if (!robot.path?.length) return false;
@@ -48,27 +56,83 @@ export const Robot3D: React.FC<Props> = ({ robot, cellSize, onOrbitLock }) => {
   useFrame((_state, delta) => {
     if (appMode === 'BUILDER') return;
     if (!groupRef.current) return;
-    const pos = groupRef.current.position;
-    const lerpSpeed = Math.min(delta * 8, 1);
-    pos.x = THREE.MathUtils.lerp(pos.x, target.x, lerpSpeed);
-    pos.z = THREE.MathUtils.lerp(pos.z, target.z, lerpSpeed);
-    const dx = pos.x - prevPos.current.x;
-    const dz = pos.z - prevPos.current.z;
-    if (Math.abs(dx) > 0.05 || Math.abs(dz) > 0.05) {
-      const targetAngle = Math.atan2(dx, dz);
-      let currentAngle = groupRef.current.rotation.y;
-      let diff = targetAngle - currentAngle;
-      diff = ((diff + Math.PI) % (Math.PI * 2)) - Math.PI;
-      if (diff < -Math.PI) diff += Math.PI * 2;
-      groupRef.current.rotation.y += diff * lerpSpeed;
+    const group = groupRef.current;
+    const pos = group.position;
+
+    // Prevent initial spawn jump/spin
+    if (!isInitializedRef.current) {
+      pos.x = target.x;
+      pos.z = target.z;
+      isInitializedRef.current = true;
     }
-    prevPos.current.x = pos.x;
-    prevPos.current.z = pos.z;
+
+    const distToTarget = Math.hypot(target.x - pos.x, target.z - pos.z);
+    const hasTask = !!(robot.currentTask || robot.currentTaskId);
+    const hasPath = !!(robot.path && robot.path.length > 0);
+
+    // STEP 3: DERIVE VISUAL STATE
+    let targetAnimState: 'IDLE' | 'MOVING' | 'WAITING' | 'CHARGING' | 'ERROR' = 'IDLE';
+    if (robot.state === 'CHARGING') {
+      targetAnimState = 'CHARGING';
+    } else if (robot.state === 'ERROR') {
+      targetAnimState = 'ERROR';
+    } else if (!hasTask && !hasPath && distToTarget < 0.15) {
+      targetAnimState = 'IDLE';
+    } else if ((robot.state === 'MOVING' || hasPath) && (distToTarget > 0.1 || hasPath)) {
+      targetAnimState = 'MOVING';
+    } else if (hasTask) {
+      targetAnimState = 'WAITING';
+    } else {
+      targetAnimState = 'IDLE';
+    }
+
+    // STEP 4 & STEP 9: POSITION MOVEMENT
+    if (targetAnimState === 'MOVING') {
+      const moveFactor = Math.min(delta * (robot.speed ? robot.speed * 6 : 6), 1);
+      pos.x = THREE.MathUtils.lerp(pos.x, target.x, moveFactor);
+      pos.z = THREE.MathUtils.lerp(pos.z, target.z, moveFactor);
+    } else {
+      // Hold final position stationary
+      pos.x = target.x;
+      pos.z = target.z;
+    }
+
+    // STEP 5: ROTATION CALCULATIONS
+    let dx = 0;
+    let dz = 0;
+
+    if (distToTarget > 0.2) {
+      dx = target.x - pos.x;
+      dz = target.z - pos.z;
+    } else if (hasPath) {
+      dx = nextWaypointTarget.x - target.x;
+      dz = nextWaypointTarget.z - target.z;
+    }
+
+    if (Math.hypot(dx, dz) > 0.05) {
+      const targetAngle = Math.atan2(dx, dz);
+      const currentAngle = group.rotation.y;
+      
+      const diff = Math.atan2(Math.sin(targetAngle - currentAngle), Math.cos(targetAngle - currentAngle));
+      const rotateFactor = Math.min(delta * 10, 1);
+      group.rotation.y += diff * rotateFactor;
+    }
+
+    if (targetAnimState !== animState) {
+      setAnimState(targetAnimState);
+      console.log(`[ROBOT DEBUG ${robot.id}] State: ${targetAnimState} | Task: ${robot.currentTaskId || 'none'} | PathRemaining: ${robot.path?.length || 0} | Position: (${robot.col}, ${robot.row})`);
+    }
   });
 
   const visuals = (
     <>
-      <GltfModel url={ASSET_URLS.robot} targetSize={cellSize * 1.4} extraScale={[robot.scale?.x ?? 1, robot.scale?.y ?? 1, robot.scale?.z ?? 1]} />
+      <GltfModel
+        url={robot.assetUrl || ASSET_URLS.robot}
+        targetSize={cellSize * 1.4}
+        extraScale={[robot.scale?.x ?? 1, robot.scale?.y ?? 1, robot.scale?.z ?? 1]}
+        animationState={animState}
+        speed={robot.speed}
+      />
       <mesh position={[0, 0.5, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <ringGeometry args={[cellSize * 0.35, cellSize * 0.42, 32]} />
         <meshBasicMaterial color={statusColor} side={THREE.DoubleSide} />

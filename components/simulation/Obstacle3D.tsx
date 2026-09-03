@@ -23,6 +23,10 @@ export const Obstacle3D: React.FC<Props> = ({ obstacle, cellSize, onOrbitLock })
     url = OBSTACLE_ASSETS[idx];
   }
 
+  const isMachine = url?.includes('machine') || url?.includes('laser') || url?.includes('industrial');
+  const labelColor = isMachine ? '#0ea5e9' : '#ff4444';
+  const labelText = isMachine ? `${obstacle.id} [SYSTEM]` : obstacle.id;
+
   return (
     <BuilderObject3D
       id={obstacle.id}
@@ -41,8 +45,8 @@ export const Obstacle3D: React.FC<Props> = ({ obstacle, cellSize, onOrbitLock })
     >
       <GltfModel url={url} targetSize={Math.max(width, depth)} extraScale={[obstacle.scale?.x ?? 1, obstacle.scale?.y ?? 1, obstacle.scale?.z ?? 1]} />
       <Billboard position={[0, Math.max(width, depth) * 0.7, 0]}>
-        <Text fontSize={5} color="#ff4444" anchorX="center" outlineWidth={0.3} outlineColor="#000000">
-          {obstacle.id}
+        <Text fontSize={4.5} color={labelColor} anchorX="center" outlineWidth={0.3} outlineColor="#000000">
+          {labelText}
         </Text>
       </Billboard>
     </BuilderObject3D>

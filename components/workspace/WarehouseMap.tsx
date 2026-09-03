@@ -13,7 +13,7 @@ export const WarehouseMap: React.FC = () => {
   const {
     shelves, paths, pois, robots, obstacles, intersections, pallets, walls,
     selectedItemId, setSelectedItem, scale, pan, showGrid, gridRows, gridCols, cellSize,
-    activeCommLinks, placeAtCell, pendingPlaceType, appMode,
+    activeCommLinks, placeAtCell, pendingPlaceType, appMode, activeTool, setPan, setScale,
   } = useWarehouseStore();
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -66,10 +66,44 @@ export const WarehouseMap: React.FC = () => {
         <Stage
         width={size.width}
         height={size.height}
-        style={{ background: 'transparent' }}
+        style={{
+          background: 'transparent',
+          cursor: activeTool === 'pan' ? 'grab' : 'default',
+        }}
         scale={{ x: scale, y: scale }}
         x={pan.x}
         y={pan.y}
+        draggable={activeTool === 'pan'}
+        onDragEnd={(e) => {
+          if (e.target === e.target.getStage()) {
+            setPan({ x: e.target.x(), y: e.target.y() });
+          }
+        }}
+        onWheel={(e) => {
+          e.evt.preventDefault();
+          const scaleBy = 1.08;
+          const stage = e.target.getStage();
+          if (!stage) return;
+          const oldScale = scale;
+          const pointer = stage.getPointerPosition();
+          if (!pointer) return;
+
+          const mousePointTo = {
+            x: (pointer.x - pan.x) / oldScale,
+            y: (pointer.y - pan.y) / oldScale,
+          };
+
+          const newScale = e.evt.deltaY < 0 ? oldScale * scaleBy : oldScale / scaleBy;
+          const clampedScale = Math.max(0.3, Math.min(3, newScale));
+
+          const newPan = {
+            x: pointer.x - mousePointTo.x * clampedScale,
+            y: pointer.y - mousePointTo.y * clampedScale,
+          };
+
+          setScale(clampedScale);
+          setPan(newPan);
+        }}
         onClick={(e) => {
           if (e.target === e.target.getStage()) {
             setSelectedItem(null, null);

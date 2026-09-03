@@ -1,6 +1,5 @@
-'use client';
-
-import React from 'react';
+import React, { useState } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useWarehouseStore } from '../../store/warehouseStore';
 import { useP2PStore } from '../../store/p2pStore';
 import { simulationToWorld } from '../../lib/coords';
@@ -35,6 +34,7 @@ function Num({
 }
 
 export const InspectorPanel: React.FC = () => {
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const p2pNodes = useP2PStore((state) => state.nodes);
   const selectedItemId = useWarehouseStore((s) => s.selectedItemId);
   const selectedItemType = useWarehouseStore((s) => s.selectedItemType);
@@ -100,19 +100,23 @@ export const InspectorPanel: React.FC = () => {
     return (
       <div className="flex flex-col gap-3">
         <div>
-          <div className="text-[10px] text-muted font-semibold mb-1">Position (world / grid)</div>
-          <div className="grid grid-cols-3 gap-1">
-            <Num label="X" value={Number(world.x.toFixed(1))} disabled={lockPos} onChange={(v) => applyTransform(kind, id, { col: Math.round(v / cellSize - width / 2) })} />
-            <Num label="Y" value={t.posY ?? 0} step={0.5} onChange={(v) => applyTransform(kind, id, { posY: Math.max(0, v) })} />
-            <Num label="Z" value={Number(world.z.toFixed(1))} disabled={lockPos} onChange={(v) => applyTransform(kind, id, { row: Math.round(v / cellSize - height / 2) })} />
+          <div className="text-[10px] font-bold text-muted tracking-wider uppercase border-b border-border pb-1 mb-2">
+            Position & Coordinates
           </div>
-          <div className="grid grid-cols-2 gap-1 mt-1">
-            <Num label="Col" value={col} disabled={lockPos} onChange={(v) => applyTransform(kind, id, { col: v })} />
-            <Num label="Row" value={row} disabled={lockPos} onChange={(v) => applyTransform(kind, id, { row: v })} />
+          <div className="grid grid-cols-3 gap-1">
+            <Num label="World X" value={Number(world.x.toFixed(1))} disabled={lockPos} onChange={(v) => applyTransform(kind, id, { col: Math.round(v / cellSize - width / 2) })} />
+            <Num label="World Y" value={t.posY ?? 0} step={0.5} onChange={(v) => applyTransform(kind, id, { posY: Math.max(0, v) })} />
+            <Num label="World Z" value={Number(world.z.toFixed(1))} disabled={lockPos} onChange={(v) => applyTransform(kind, id, { row: Math.round(v / cellSize - height / 2) })} />
+          </div>
+          <div className="grid grid-cols-2 gap-1 mt-1.5">
+            <Num label="Grid Col" value={col} disabled={lockPos} onChange={(v) => applyTransform(kind, id, { col: v })} />
+            <Num label="Grid Row" value={row} disabled={lockPos} onChange={(v) => applyTransform(kind, id, { row: v })} />
           </div>
         </div>
         <div>
-          <div className="text-[10px] text-muted font-semibold mb-1">Rotation (°)</div>
+          <div className="text-[10px] font-bold text-muted tracking-wider uppercase border-b border-border pb-1 mb-2">
+            Rotation (°)
+          </div>
           <div className="grid grid-cols-3 gap-1">
             <Num label="X" value={t.rotX ?? 0} onChange={(v) => applyTransform(kind, id, { rotX: v })} />
             <Num label="Y" value={t.rotY ?? 0} onChange={(v) => applyTransform(kind, id, { rotY: v })} />
@@ -120,7 +124,9 @@ export const InspectorPanel: React.FC = () => {
           </div>
         </div>
         <div>
-          <div className="text-[10px] text-muted font-semibold mb-1">Scale</div>
+          <div className="text-[10px] font-bold text-muted tracking-wider uppercase border-b border-border pb-1 mb-2">
+            Scale Factors
+          </div>
           <div className="grid grid-cols-3 gap-1">
             <Num label="X" value={scale.x} step={0.1} onChange={(v) => applyTransform(kind, id, { scale: { ...scale, x: Math.max(0.2, v) } })} />
             <Num label="Y" value={scale.y} step={0.1} onChange={(v) => applyTransform(kind, id, { scale: { ...scale, y: Math.max(0.2, v) } })} />
@@ -135,22 +141,48 @@ export const InspectorPanel: React.FC = () => {
   const nodeId = p2pNode ? p2pNode.nodeId : `amr-node-${selectedRobot?.id.toLowerCase()}`;
 
   return (
-    <div className="w-[240px] bg-panel border-l border-border flex flex-col flex-shrink-0">
-      <div className="h-[30px] border-b border-border flex items-center px-3 bg-app">
-        <span className="text-[11px] font-bold text-text tracking-wider">INSPECTOR</span>
+    <div
+      className={`bg-panel border-l border-border flex flex-col flex-shrink-0 relative transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+        isCollapsed ? 'w-[36px]' : 'w-[240px]'
+      }`}
+    >
+      <div className="h-[30px] border-b border-border flex items-center justify-between px-2 bg-app select-none overflow-hidden">
+        {!isCollapsed && (
+          <span className="text-[11px] font-bold text-text tracking-wider truncate">INSPECTOR</span>
+        )}
+        <button
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          className="p-1 rounded hover:bg-toolbar text-muted hover:text-text transition-colors flex items-center justify-center ml-auto"
+          title={isCollapsed ? "Expand Inspector" : "Collapse Inspector"}
+        >
+          {isCollapsed ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
+        </button>
       </div>
 
-      <div className="p-3 overflow-y-auto flex-1 flex flex-col gap-4 text-[12px] text-text">
+      {isCollapsed ? (
+        <div
+          className="flex-1 flex flex-col items-center py-4 cursor-pointer text-muted hover:text-text select-none"
+          onClick={() => setIsCollapsed(false)}
+          title="Click to expand Inspector"
+        >
+          <span className="text-[10px] font-bold tracking-widest uppercase [writing-mode:vertical-lr] rotate-180">
+            INSPECTOR
+          </span>
+        </div>
+      ) : (
+        <div className="p-3 overflow-y-auto flex-1 flex flex-col gap-4 text-[12px] text-text">
         {builder && (
           <div className="flex flex-col gap-2 pb-3 border-b border-border">
-            <div className="text-[10px] text-muted font-semibold">Gizmo</div>
+            <div className="text-[10px] font-bold text-muted tracking-wider uppercase border-b border-border pb-1 mb-1">
+              Transform Gizmo & Snap
+            </div>
             <div className="flex gap-1">
               {(['translate', 'rotate', 'scale'] as const).map((m) => (
                 <button
                   key={m}
                   onClick={() => setTransformMode(m)}
-                  className={`flex-1 px-1 py-1 text-[10px] rounded-sm border capitalize ${
-                    transformMode === m ? 'bg-accent text-white border-accent' : 'bg-workspace border-border'
+                  className={`flex-1 px-1 py-1 text-[10px] rounded-sm border capitalize font-semibold transition-colors ${
+                    transformMode === m ? 'bg-accent text-white border-accent' : 'bg-workspace border-border text-muted hover:text-text'
                   }`}
                 >
                   {m === 'translate' ? 'Move' : m === 'rotate' ? 'Rotate' : 'Scale'}
@@ -164,77 +196,114 @@ export const InspectorPanel: React.FC = () => {
         {selectedFloor && (
           <div className="flex flex-col gap-3">
             <div>
-              <div className="text-[10px] text-muted font-semibold mb-1">Selected Object</div>
-              <div className="font-bold text-[14px]">FLOOR</div>
+              <div className="text-[10px] font-bold text-muted tracking-wider uppercase border-b border-border pb-1 mb-2">
+                Selected Object
+              </div>
+              <div className="font-bold text-[14px] text-accent">FLOOR / CANVAS</div>
             </div>
-            <Num label="Warehouse width (cells)" value={gridCols} disabled={!builder} onChange={(v) => setWarehouseSize(v, gridRows)} />
-            <Num label="Warehouse depth (cells)" value={gridRows} disabled={!builder} onChange={(v) => setWarehouseSize(gridCols, v)} />
-            <div className="text-[10px] text-muted">Walls stay aligned to this boundary. Objects are clamped inside.</div>
+            <div>
+              <div className="text-[10px] font-bold text-muted tracking-wider uppercase border-b border-border pb-1 mb-2">
+                Dimensions
+              </div>
+              <div className="flex flex-col gap-2">
+                <Num label="Width (cells)" value={gridCols} disabled={!builder} onChange={(v) => setWarehouseSize(v, gridRows)} />
+                <Num label="Depth (cells)" value={gridRows} disabled={!builder} onChange={(v) => setWarehouseSize(gridCols, v)} />
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] font-bold text-muted tracking-wider uppercase border-b border-border pb-1 mb-1">
+                Constraints & Boundary
+              </div>
+              <div className="text-[10px] text-muted leading-relaxed">
+                Outer walls automatically align to grid edges. Placed objects are clamped within boundary.
+              </div>
+            </div>
           </div>
         )}
 
         {selectedWall && (
           <div className="flex flex-col gap-3">
             <div>
-              <div className="text-[10px] text-muted font-semibold mb-1">Selected Object</div>
-              <div className="font-bold text-[14px]">WALL {selectedWall.side}</div>
+              <div className="text-[10px] font-bold text-muted tracking-wider uppercase border-b border-border pb-1 mb-2">
+                Selected Object
+              </div>
+              <div className="font-bold text-[14px]">WALL ({selectedWall.side})</div>
             </div>
-            <Num label="Height" value={selectedWall.height} disabled={!builder} onChange={(v) => updateWall(selectedWall.id, { height: v })} />
-            <Num label="Thickness" value={selectedWall.thickness} disabled={!builder} onChange={(v) => updateWall(selectedWall.id, { thickness: v })} />
+            <div>
+              <div className="text-[10px] font-bold text-muted tracking-wider uppercase border-b border-border pb-1 mb-2">
+                Dimensions
+              </div>
+              <div className="flex flex-col gap-2">
+                <Num label="Height" value={selectedWall.height} disabled={!builder} onChange={(v) => updateWall(selectedWall.id, { height: v })} />
+                <Num label="Thickness" value={selectedWall.thickness} disabled={!builder} onChange={(v) => updateWall(selectedWall.id, { thickness: v })} />
+              </div>
+            </div>
           </div>
         )}
 
         {selectedRobot && (
           <div className="flex flex-col gap-4">
             <div>
-              <div className="text-[10px] text-muted font-semibold mb-1">Selected Object</div>
-              <div className="font-bold text-[14px]">ROBOT</div>
+              <div className="text-[10px] font-bold text-muted tracking-wider uppercase border-b border-border pb-1 mb-2">
+                Selected Object
+              </div>
+              <div className="font-bold text-[14px] text-accent">ROBOT</div>
               <div className="font-mono mt-1 font-bold">ID: {selectedRobot.id}</div>
               <div className="font-mono text-[11px] text-muted">Node ID: {nodeId}</div>
             </div>
             <div>
-              <div className="text-[10px] text-muted font-semibold mb-1">Status</div>
-              <div className="flex items-center gap-1.5">
-                <div className={`w-2 h-2 rounded-full ${selectedRobot.state === 'MOVING' ? 'bg-accent' : selectedRobot.state === 'WAITING' ? 'bg-warning' : 'bg-success'}`} />
-                <span className="capitalize">{selectedRobot.state.toLowerCase()}</span>
+              <div className="text-[10px] font-bold text-muted tracking-wider uppercase border-b border-border pb-1 mb-2">
+                Status & Telemetry
               </div>
-            </div>
-            <div>
-              <div className="text-[10px] text-muted font-semibold mb-1">Battery</div>
-              <div className="flex items-center gap-2">
-                <div className="flex-1 h-3 bg-app rounded-sm overflow-hidden border border-border">
-                  <div className="h-full bg-success" style={{ width: `${selectedRobot.battery}%` }} />
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] text-muted font-semibold">State:</span>
+                <div className="flex items-center gap-1.5">
+                  <div className={`w-2 h-2 rounded-full ${selectedRobot.state === 'MOVING' ? 'bg-accent' : selectedRobot.state === 'WAITING' ? 'bg-warning' : 'bg-success'}`} />
+                  <span className="capitalize font-mono font-bold">{selectedRobot.state.toLowerCase()}</span>
                 </div>
-                <span className="font-mono text-[11px]">{Math.round(selectedRobot.battery)}%</span>
               </div>
-            </div>
-            <div>
-              <div className="text-[10px] text-muted font-semibold mb-1">Current Task</div>
-              <div className="font-mono bg-workspace p-1.5 border border-border rounded-sm">{selectedRobot.currentTask || 'None'}</div>
-            </div>
-            <div>
-              <div className="text-[10px] text-muted font-semibold mb-1">Hardware Capabilities</div>
-              <div className="flex flex-col gap-1 text-[11px] font-mono bg-workspace p-2 border border-border rounded-sm">
-                <div>Capability: <span className="font-bold">{selectedRobot.deliveryCapability || 'Standard Transport'}</span></div>
-                <div>Payload Cap: {selectedRobot.payloadCapacity ?? 20} kg</div>
-                <div>Current Load: {selectedRobot.currentLoad ?? 0} kg</div>
-                <div>Sensing Radius: {selectedRobot.sensingRadius ?? 5} m</div>
+              <div className="flex flex-col gap-1 mb-2">
+                <span className="text-[10px] text-muted font-semibold">Battery</span>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 h-2.5 bg-app rounded-xs overflow-hidden border border-border">
+                    <div className="h-full bg-success" style={{ width: `${selectedRobot.battery}%` }} />
+                  </div>
+                  <span className="font-mono text-[11px] font-bold">{Math.round(selectedRobot.battery)}%</span>
+                </div>
+              </div>
+              <div>
+                <span className="text-[10px] text-muted font-semibold">Current Task</span>
+                <div className="font-mono bg-workspace p-1.5 border border-border rounded-xs mt-0.5 text-[11px] truncate">{selectedRobot.currentTask || 'Idle / Unassigned'}</div>
               </div>
             </div>
 
             <div>
-              <div className="text-[10px] text-muted font-semibold mb-1">P2P Connection & Telemetry</div>
-              <div className="flex flex-col gap-1 text-[11px] font-mono bg-workspace p-2 border border-border rounded-sm">
+              <div className="text-[10px] font-bold text-muted tracking-wider uppercase border-b border-border pb-1 mb-2">
+                Hardware Capabilities
+              </div>
+              <div className="flex flex-col gap-1 text-[11px] font-mono bg-workspace p-2 border border-border rounded-xs">
+                <div className="flex justify-between"><span>Capability:</span> <span className="font-bold">{selectedRobot.deliveryCapability || 'Transport'}</span></div>
+                <div className="flex justify-between"><span>Payload Cap:</span> <span>{selectedRobot.payloadCapacity ?? 20} kg</span></div>
+                <div className="flex justify-between"><span>Current Load:</span> <span>{selectedRobot.currentLoad ?? 0} kg</span></div>
+                <div className="flex justify-between"><span>Sensing Range:</span> <span>{selectedRobot.sensingRadius ?? 5} m</span></div>
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[10px] font-bold text-muted tracking-wider uppercase border-b border-border pb-1 mb-2">
+                P2P Network Telemetry
+              </div>
+              <div className="flex flex-col gap-1 text-[11px] font-mono bg-workspace p-2 border border-border rounded-xs">
                 <div className="flex justify-between">
                   <span>Connection:</span>
                   <span className="font-bold text-success">CONNECTED</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Signal:</span>
+                  <span>Signal Quality:</span>
                   <span>{selectedRobot.signalStrength ?? 95}%</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Temp:</span>
+                  <span>Core Temp:</span>
                   <span>{selectedRobot.temperature ?? 36}°C</span>
                 </div>
               </div>
@@ -246,7 +315,9 @@ export const InspectorPanel: React.FC = () => {
         {selectedObstacle && (
           <div className="flex flex-col gap-4">
             <div>
-              <div className="text-[10px] text-muted font-semibold mb-1">Selected Object</div>
+              <div className="text-[10px] font-bold text-muted tracking-wider uppercase border-b border-border pb-1 mb-2">
+                Selected Object
+              </div>
               <div className="font-bold text-[14px]">OBSTACLE</div>
               <div className="font-mono mt-1">ID: {selectedObstacle.id}</div>
             </div>
@@ -257,8 +328,10 @@ export const InspectorPanel: React.FC = () => {
         {selectedShelf && (
           <div className="flex flex-col gap-4">
             <div>
-              <div className="text-[10px] text-muted font-semibold mb-1">Selected Object</div>
-              <div className="font-bold text-[14px]">SHELF</div>
+              <div className="text-[10px] font-bold text-muted tracking-wider uppercase border-b border-border pb-1 mb-2">
+                Selected Object
+              </div>
+              <div className="font-bold text-[14px]">STORAGE SHELF</div>
               <div className="font-mono mt-1">ID: {selectedShelf.id}</div>
             </div>
             {transformFields('SHELF', selectedShelf.id, selectedShelf.row, selectedShelf.col, selectedShelf.width, selectedShelf.height, selectedShelf)}
@@ -268,7 +341,9 @@ export const InspectorPanel: React.FC = () => {
         {selectedPoi && (
           <div className="flex flex-col gap-4">
             <div>
-              <div className="text-[10px] text-muted font-semibold mb-1">Selected Object</div>
+              <div className="text-[10px] font-bold text-muted tracking-wider uppercase border-b border-border pb-1 mb-2">
+                Selected Object
+              </div>
               <div className="font-bold text-[14px]">{selectedPoi.type}</div>
               <div className="font-mono mt-1">{selectedPoi.label}</div>
             </div>
@@ -279,7 +354,9 @@ export const InspectorPanel: React.FC = () => {
         {selectedPallet && (
           <div className="flex flex-col gap-4">
             <div>
-              <div className="text-[10px] text-muted font-semibold mb-1">Selected Object</div>
+              <div className="text-[10px] font-bold text-muted tracking-wider uppercase border-b border-border pb-1 mb-2">
+                Selected Object
+              </div>
               <div className="font-bold text-[14px]">PALLET</div>
               <div className="font-mono mt-1">ID: {selectedPallet.id}</div>
             </div>
@@ -292,16 +369,17 @@ export const InspectorPanel: React.FC = () => {
         )}
 
         {builder && selectedItemId && selectedItemType && selectedItemType !== 'FLOOR' && selectedItemType !== 'WALL' && (
-          <div className="flex gap-2 w-full mt-4">
-            <button onClick={duplicateSelected} className="px-4 py-1.5 bg-workspace border border-border text-text rounded-sm hover:bg-opacity-80 font-medium w-full transition-colors">
+          <div className="flex gap-2 w-full mt-4 pt-2 border-t border-border">
+            <button onClick={duplicateSelected} className="px-3 py-1.5 bg-workspace border border-border text-text rounded-xs hover:bg-app font-semibold text-[11px] w-full transition-colors">
               Duplicate
             </button>
-            <button onClick={deleteSelected} className="px-4 py-1.5 bg-danger text-white rounded-sm hover:bg-opacity-80 font-medium w-full transition-colors">
+            <button onClick={deleteSelected} className="px-3 py-1.5 bg-danger text-white rounded-xs hover:bg-opacity-90 font-semibold text-[11px] w-full transition-colors">
               Delete
             </button>
           </div>
         )}
       </div>
+      )}
     </div>
   );
 };
