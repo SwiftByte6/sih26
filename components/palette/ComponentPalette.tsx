@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Box, Car, ShieldAlert, MapPin, Download, BatteryCharging, Layers, PackageOpen, Bot, LayoutGrid, Star,
-  Truck, Cpu, Navigation, Cog, Zap, Target
+  Truck, Cpu, Navigation, Cog, Zap, Target, FolderOpen
 } from 'lucide-react';
 import { useWarehouseStore } from '../../store/warehouseStore';
 import { PlaceableType } from '../../types/warehouse';
@@ -30,7 +30,7 @@ const ITEMS: PaletteItem[] = [
   { icon: MapPin, label: 'Drop Point', type: 'DROP', category: 'DECORATIONS' },
   { icon: Layers, label: 'Pallet', type: 'PALLET', category: 'DECORATIONS' },
 
-  // 3D Model Assets - Robots (each with distinct icon)
+  // 3D Model Assets - Robots
   { icon: Bot, label: 'Home Robot', type: 'ROBOT', category: 'ROBOTS', assetUrl: '/assets/cute_home_robot.glb', fullName: 'cute_home_robot.glb' },
   { icon: Cpu, label: 'Cyber Robot', type: 'ROBOT', category: 'ROBOTS', assetUrl: '/assets/cyberpunk_robot.glb', fullName: 'cyberpunk_robot.glb' },
   { icon: Navigation, label: 'Delivery Bot', type: 'ROBOT', category: 'ROBOTS', assetUrl: '/assets/zeery_autonomous_delivery_robot.glb', fullName: 'zeery_autonomous_delivery_robot.glb' },
@@ -42,7 +42,7 @@ const ITEMS: PaletteItem[] = [
   { icon: PackageOpen, label: 'Roundwood', type: 'OBSTACLE', category: 'OBSTACLES', assetUrl: '/assets/roundwood_warehouse.glb', fullName: 'roundwood_warehouse.glb' },
   { icon: BatteryCharging, label: 'EV Station', type: 'CHARGER', category: 'OBSTACLES', assetUrl: '/assets/electric_vehicle_charging_point_trydan.glb', fullName: 'electric_vehicle_charging_point_trydan.glb' },
 
-  // 3D Model Assets - Decorations, Machinery & Logistics
+  // 3D Model Assets - Machinery & Logistics
   { icon: Cog, label: 'Sim Machine', type: 'OBSTACLE', category: 'DECORATIONS', assetUrl: '/assets/real_time_simulation_robot_machine.glb', fullName: 'real_time_simulation_robot_machine.glb', isNew: true },
   { icon: Target, label: 'Laser Machine', type: 'OBSTACLE', category: 'DECORATIONS', assetUrl: '/assets/simulation_laser_cutting_robot_systems.glb', fullName: 'simulation_laser_cutting_robot_systems.glb', isNew: true },
   { icon: Truck, label: 'Forklift', type: 'OBSTACLE', category: 'DECORATIONS', assetUrl: '/assets/warehouse_forklift_gameready.glb', fullName: 'warehouse_forklift_gameready.glb' },
@@ -58,7 +58,6 @@ const ITEMS: PaletteItem[] = [
 const STARRED_STORAGE_KEY = 'amr-starred-models';
 
 export const ComponentPalette: React.FC = () => {
-  const appMode = useWarehouseStore((s) => s.appMode);
   const pendingPlaceType = useWarehouseStore((s) => s.pendingPlaceType);
   const pendingAssetUrl = useWarehouseStore((s) => s.pendingAssetUrl);
   const setPendingPlaceType = useWarehouseStore((s) => s.setPendingPlaceType);
@@ -85,9 +84,13 @@ export const ComponentPalette: React.FC = () => {
     });
   };
 
-  if (appMode !== 'BUILDER') {
-    return null;
-  }
+  const categoriesConfig: { key: Category; label: string; icon: any; count: number }[] = [
+    { key: 'ALL', label: 'All Components', icon: LayoutGrid, count: ITEMS.length },
+    { key: 'STARRED', label: 'Favorites', icon: Star, count: starredLabels.length },
+    { key: 'ROBOTS', label: 'Robots & Fleet', icon: Bot, count: ITEMS.filter((i) => i.category === 'ROBOTS').length },
+    { key: 'OBSTACLES', label: 'Obstacles & Shelves', icon: Box, count: ITEMS.filter((i) => i.category === 'OBSTACLES').length },
+    { key: 'DECORATIONS', label: 'Decorations & Machinery', icon: Layers, count: ITEMS.filter((i) => i.category === 'DECORATIONS').length },
+  ];
 
   const filteredItems = activeCategory === 'ALL'
     ? ITEMS
@@ -104,119 +107,101 @@ export const ComponentPalette: React.FC = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto my-1 bg-panel border border-border rounded-md shadow-md p-2 flex flex-col gap-1.5 z-20">
-      {/* Top Header & Tabs */}
-      <div className="flex items-center justify-between gap-2 px-1">
-        <span className="text-[10px] font-bold text-muted tracking-wider uppercase flex items-center gap-1.5">
-          Component Palette
-          {ITEMS.some((i) => i.isNew) && (
-            <span className="bg-accent text-white text-[8px] font-extrabold px-1 rounded-xs uppercase tracking-tight">
-              +4 NEW MODELS
-            </span>
-          )}
+    <div className="w-full bg-panel border-t border-border shadow-md px-2.5 py-1.5 flex items-center gap-2.5 z-20 select-none h-[54px]">
+      {/* Icon-Only Category Selector (No Slider/Scrollbar!) */}
+      <div className="bg-app border border-border rounded-md px-2 py-1 flex items-center gap-1.5 h-full flex-shrink-0">
+        <span className="text-[8px] font-bold tracking-wider uppercase text-muted pr-1.5 border-r border-border flex items-center gap-1">
+          <FolderOpen size={12} className="text-accent" />
+          <span className="hidden md:inline">Library</span>
         </span>
 
-        {/* Categories */}
-        <div className="flex items-center gap-1 bg-app border border-border rounded-sm p-0.5">
-          <button
-            onClick={() => setActiveCategory('ALL')}
-            className={`flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold rounded-sm transition-colors ${
-              activeCategory === 'ALL' ? 'bg-accent text-white' : 'text-muted hover:text-text'
-            }`}
-          >
-            <LayoutGrid size={11} /> All ({ITEMS.length})
-          </button>
-          <button
-            onClick={() => setActiveCategory('STARRED')}
-            className={`flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold rounded-sm transition-colors ${
-              activeCategory === 'STARRED' ? 'bg-amber-500 text-white' : 'text-muted hover:text-amber-600'
-            }`}
-          >
-            <Star size={11} className={starredLabels.length > 0 ? "fill-amber-400 text-amber-400" : ""} /> Favorites ({starredLabels.length})
-          </button>
-          <button
-            onClick={() => setActiveCategory('ROBOTS')}
-            className={`flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold rounded-sm transition-colors ${
-              activeCategory === 'ROBOTS' ? 'bg-accent text-white' : 'text-muted hover:text-text'
-            }`}
-          >
-            <Bot size={11} /> Robots
-          </button>
-          <button
-            onClick={() => setActiveCategory('OBSTACLES')}
-            className={`flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold rounded-sm transition-colors ${
-              activeCategory === 'OBSTACLES' ? 'bg-accent text-white' : 'text-muted hover:text-text'
-            }`}
-          >
-            <Box size={11} /> Obstacles
-          </button>
-          <button
-            onClick={() => setActiveCategory('DECORATIONS')}
-            className={`flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold rounded-sm transition-colors ${
-              activeCategory === 'DECORATIONS' ? 'bg-accent text-white' : 'text-muted hover:text-text'
-            }`}
-          >
-            <Layers size={11} /> Decorations
-          </button>
-        </div>
+        {categoriesConfig.map((cat) => {
+          const isActive = activeCategory === cat.key;
+          const Icon = cat.icon;
+          return (
+            <button
+              key={cat.key}
+              onClick={() => setActiveCategory(cat.key)}
+              className={`p-1.5 rounded-md transition-all relative flex items-center justify-center ${
+                isActive
+                  ? 'bg-accent text-white shadow-2xs border border-accent'
+                  : 'text-text hover:bg-panel hover:text-accent bg-panel border border-border'
+              }`}
+              title={`${cat.label} (${cat.count})`}
+            >
+              <Icon size={14} className={isActive ? 'text-white' : 'text-accent'} />
+              {cat.count > 0 && (
+                <span className={`absolute -top-1 -right-1 text-[7px] font-extrabold px-1 rounded-full font-mono leading-none ${
+                  isActive ? 'bg-white text-accent' : 'bg-accent text-white'
+                }`}>
+                  {cat.count}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
-      {/* Component Grid / Items */}
-      <div className="flex gap-2 overflow-x-auto pb-1 max-w-full" style={{ scrollbarWidth: 'thin' }}>
-        {filteredItems.length === 0 ? (
-          <div className="text-[11px] text-muted italic px-4 py-3 text-center w-full">
-            No models found in this category. Click the ⭐ icon on any item card to add it to Favorites.
-          </div>
-        ) : (
-          filteredItems.map((item, idx) => {
-            const isSelected = pendingPlaceType === item.type && pendingAssetUrl === (item.assetUrl || null);
-            const isStarred = starredLabels.includes(item.label);
+      {/* Files & Models inside Selected Category (Horizontal Scroll along X) */}
+      <div className="flex-1 bg-app border border-border rounded-md p-1 flex items-center justify-between h-full overflow-hidden min-w-0">
+        <div className="hidden lg:flex flex-col justify-center px-1.5 flex-shrink-0 border-r border-border mr-1 max-w-[130px]">
+          <span className="text-[8px] font-bold tracking-wider uppercase text-muted truncate">
+            {categoriesConfig.find((c) => c.key === activeCategory)?.label}
+          </span>
+          <span className="text-[7px] text-muted truncate">
+            {filteredItems.length} items available
+          </span>
+        </div>
 
-            return (
-              <div
-                key={`${item.label}-${idx}`}
-                draggable
-                onDragStart={(e) => handleDragStart(e, item.type, item.assetUrl)}
-                onClick={() => setPendingPlaceType(isSelected ? null : item.type, item.assetUrl)}
-                className={`w-[88px] h-[55px] bg-workspace border rounded-sm flex flex-col items-center justify-center gap-0.5 flex-shrink-0 cursor-grab hover:border-accent hover:bg-white transition-all relative select-none ${
-                  isSelected
-                    ? 'border-accent bg-white ring-1 ring-accent'
-                    : item.isNew
-                    ? 'border-accent/60 bg-accent/5 hover:bg-white'
-                    : 'border-border'
-                }`}
-                title={item.fullName || `Click to place ${item.label} or drag onto map`}
-              >
-                {/* NEW Model Highlight Badge */}
-                {item.isNew && (
-                  <span className="absolute -top-1 -right-1 bg-accent text-white text-[7px] font-extrabold px-1 rounded-xs uppercase tracking-tighter border border-white shadow-xs z-10">
-                    NEW
-                  </span>
-                )}
+        <div className="flex-1 flex items-center gap-1.5 overflow-x-auto overflow-y-hidden" style={{ scrollbarWidth: 'thin' }}>
+          {filteredItems.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center text-[9px] text-muted italic px-2 text-center">
+              No items in category. Click ⭐ on any card to add to Favorites.
+            </div>
+          ) : (
+            filteredItems.map((item, idx) => {
+              const isSelected = pendingPlaceType === item.type && pendingAssetUrl === (item.assetUrl || null);
+              const isStarred = starredLabels.includes(item.label);
 
-                {/* Star Favorite Button */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleStar(item.label);
-                  }}
-                  className="absolute top-0.5 left-0.5 p-0.5 rounded-full hover:bg-app transition-colors z-10"
-                  title={isStarred ? "Remove from Favorites" : "Mark as Favorite (Star)"}
+              return (
+                <div
+                  key={`${item.label}-${idx}`}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, item.type, item.assetUrl)}
+                  onClick={() => setPendingPlaceType(isSelected ? null : item.type, item.assetUrl)}
+                  className={`w-[78px] h-[34px] bg-panel border rounded-md flex flex-col items-center justify-center flex-shrink-0 cursor-grab hover:border-accent hover:bg-white transition-all relative select-none p-0.5 ${
+                    isSelected
+                      ? 'border-accent bg-white ring-1 ring-accent'
+                      : item.isNew
+                      ? 'border-accent/60 bg-accent/5 hover:bg-white'
+                      : 'border-border'
+                  }`}
+                  title={item.fullName || item.label}
                 >
-                  <Star
-                    size={11}
-                    className={isStarred ? "fill-amber-400 text-amber-500" : "text-muted/40 hover:text-amber-500"}
-                  />
-                </button>
+                  {/* Star Favorite Button */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleStar(item.label);
+                    }}
+                    className="absolute top-0.5 left-0.5 p-0.5 rounded-full hover:bg-app transition-colors z-10"
+                    title={isStarred ? "Remove from Favorites" : "Mark as Favorite"}
+                  >
+                    <Star
+                      size={9}
+                      className={isStarred ? "fill-amber-400 text-amber-500" : "text-muted/40 hover:text-amber-500"}
+                    />
+                  </button>
 
-                <item.icon size={16} className={item.isNew ? "text-accent" : "text-text"} />
-                <span className="text-[9px] font-semibold text-text text-center px-1 truncate w-full">
-                  {item.label}
-                </span>
-              </div>
-            );
-          })
-        )}
+                  <item.icon size={13} className={item.isNew ? "text-accent" : "text-text"} />
+                  <span className="text-[8px] font-bold text-text text-center px-0.5 truncate w-full leading-none mt-0.5">
+                    {item.label}
+                  </span>
+                </div>
+              );
+            })
+          )}
+        </div>
       </div>
     </div>
   );
