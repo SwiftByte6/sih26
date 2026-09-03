@@ -1,9 +1,10 @@
 'use client';
 
 import React from 'react';
-import { Group, Rect, Circle, Line, Text } from 'react-konva';
+import { Group, Circle, Line, Text, Image as KonvaImage } from 'react-konva';
 import { Robot } from '../../types/warehouse';
 import { useWarehouseStore } from '../../store/warehouseStore';
+import { useSvgImage } from '../../lib/useSvgImage';
 
 interface AmrRobotProps {
   robot: Robot;
@@ -11,25 +12,28 @@ interface AmrRobotProps {
 
 export const AmrRobot: React.FC<AmrRobotProps> = ({ robot }) => {
   const { selectedItemId, setSelectedItem, cellSize, activeCommLinks, appMode, updateRobot } = useWarehouseStore();
+  const robotImg = useSvgImage('/assets/warehouse/robot.svg');
   const isSelected = selectedItemId === robot.id;
   const isCommunicating = activeCommLinks.some(l => l.from === robot.id);
   const builder = appMode === 'BUILDER';
   
   // Calculate position
-  const x = robot.col * cellSize;
-  const y = robot.row * cellSize;
+  const x = robot.col * cellSize + cellSize / 2;
+  const y = robot.row * cellSize + cellSize / 2;
+  const size = cellSize * 1.5;
   
   const handleSelect = () => {
     setSelectedItem(robot.id, 'ROBOT');
   };
 
-  // Determine status color
-  const statusColor = robot.state === 'MOVING' ? '#008CC9' : 
-                     robot.state === 'WAITING' ? '#D99A00' : 
-                     robot.state === 'CHARGING' ? '#2E8B57' : 
-                     robot.state === 'ERROR' ? '#C83E3E' : '#9AA7B2';
+  // Determine status color per specs
+  const statusColor = 
+    robot.state === 'MOVING' ? '#42BFE5' : 
+    robot.state === 'WAITING' ? '#E5B84B' : 
+    robot.state === 'CHARGING' ? '#2E8B57' : 
+    robot.state === 'ERROR' ? '#E45C5C' : '#AAB4B8';
 
-  // Rotation: If the robot has a path, make it face the next point. Otherwise default 0 (facing right or top)
+  // Rotation: Calculate rotation from travel path direction
   let rotation = 0;
   if (robot.path && robot.path.length > 0) {
     const nextPoint = robot.path[0];
@@ -37,8 +41,7 @@ export const AmrRobot: React.FC<AmrRobotProps> = ({ robot }) => {
     const dy = nextPoint.row - robot.row;
     rotation = Math.atan2(dy, dx) * (180 / Math.PI);
   } else {
-     // Default orientation (facing 'up' visually in this example)
-     rotation = -90; 
+    rotation = 0; 
   }
 
   return (
@@ -47,9 +50,10 @@ export const AmrRobot: React.FC<AmrRobotProps> = ({ robot }) => {
       y={y}
       draggable={builder}
       onDragEnd={(e) => {
+        if (!builder) return;
         updateRobot(robot.id, {
-          col: Math.round(e.target.x() / cellSize),
-          row: Math.round(e.target.y() / cellSize),
+          col: Math.round((e.target.x() - cellSize / 2) / cellSize),
+          row: Math.round((e.target.y() - cellSize / 2) / cellSize),
         });
       }}
       onClick={handleSelect}
@@ -57,140 +61,94 @@ export const AmrRobot: React.FC<AmrRobotProps> = ({ robot }) => {
     >
       {/* Sensor / Safety Radius */}
       <Circle 
-        radius={cellSize * 1.8} 
+        radius={cellSize * 1.6} 
         fill={statusColor} 
-        opacity={isSelected ? 0.15 : 0.05} 
+        opacity={isSelected ? 0.2 : 0.06} 
         stroke={statusColor}
         strokeWidth={1}
         dash={[4, 4]}
       />
 
+      {/* Robot SVG Model Centered & Rotated */}
       <Group rotation={rotation}>
-        {/* Robot Body */}
-        <Rect
-          x={-cellSize * 0.7}
-          y={-cellSize * 0.7}
-          width={cellSize * 1.4}
-          height={cellSize * 1.4}
-          fill="#17212B"
-          cornerRadius={4}
-          shadowColor="black"
-          shadowBlur={isSelected ? 6 : 2}
-          shadowOpacity={0.3}
-        />
-        
-        {/* Selection Highlight */}
-        {isSelected && (
-          <Rect
-            x={-cellSize * 0.8}
-            y={-cellSize * 0.8}
-            width={cellSize * 1.6}
-            height={cellSize * 1.6}
-            stroke="#008CC9"
-            strokeWidth={2}
-            cornerRadius={6}
+        {robotImg ? (
+          <KonvaImage
+            image={robotImg}
+            x={-size / 2}
+            y={-size / 2}
+            width={size}
+            height={size}
           />
+        ) : (
+          <Circle radius={size * 0.4} fill="#20282C" stroke={statusColor} strokeWidth={2} />
         )}
-
-        {/* Left Wheel */}
-        <Rect
-          x={-cellSize * 0.4}
-          y={-cellSize * 0.8}
-          width={cellSize * 0.8}
-          height={cellSize * 0.2}
-          fill="#52606D"
-          cornerRadius={2}
-        />
-        
-        {/* Right Wheel */}
-        <Rect
-          x={-cellSize * 0.4}
-          y={cellSize * 0.6}
-          width={cellSize * 0.8}
-          height={cellSize * 0.2}
-          fill="#52606D"
-          cornerRadius={2}
-        />
-
-        {/* Front Direction Indicator (Arrow pointing Right in local coordinate system) */}
-        <Line 
-          points={[
-            cellSize * 0.2, -cellSize * 0.3,
-            cellSize * 0.5, 0,
-            cellSize * 0.2, cellSize * 0.3
-          ]} 
-          stroke="white" 
-          strokeWidth={2} 
-          lineJoin="round" 
-        />
         
         {/* Status Indicator LED */}
         <Circle 
-          x={-cellSize * 0.3} 
+          x={size * 0.3} 
           y={0} 
-          radius={3} 
+          radius={4} 
           fill={statusColor} 
           shadowColor={statusColor}
-          shadowBlur={4}
+          shadowBlur={6}
         />
       </Group>
 
-      {/* ID Label (Stays unrotated for readability) */}
+      {/* Selection Ring Overlay */}
+      {isSelected && (
+        <Circle
+          radius={size * 0.75}
+          stroke="#42BFE5"
+          strokeWidth={1.5}
+          dash={[5, 3]}
+        />
+      )}
+
+      {/* Robot ID Label */}
       <Text
         text={robot.id}
         x={-cellSize}
-        y={cellSize * 0.9}
+        y={size * 0.5 + 2}
         width={cellSize * 2}
         align="center"
-        fill="#17212B"
-        fontSize={10}
+        fill="#F1F5F6"
+        fontSize={11}
         fontStyle="bold"
+        opacity={isSelected ? 1 : 0.85}
       />
       
-      {/* Status Label */}
+      {/* Robot Status Label */}
       <Text
-        text={robot.state}
+        text={`● ${robot.state}`}
         x={-cellSize}
-        y={cellSize * 0.9 + 12}
+        y={size * 0.5 + 16}
         width={cellSize * 2}
         align="center"
         fill={statusColor}
-        fontSize={8}
+        fontSize={9}
         fontStyle="bold"
+        opacity={isSelected ? 1 : 0.75}
       />
       
-      {/* Communication Indicator ))) */}
+      {/* Communication Link Ripples */}
       {isCommunicating && (
         <>
-          <Circle
-            radius={cellSize * 1.2}
-            stroke={statusColor}
-            strokeWidth={1}
-            opacity={0.4}
-          />
-          <Circle
-            radius={cellSize * 1.5}
-            stroke={statusColor}
-            strokeWidth={1}
-            opacity={0.25}
-          />
-          <Circle
-            radius={cellSize * 1.8}
-            stroke={statusColor}
-            strokeWidth={1}
-            opacity={0.1}
-          />
+          <Circle radius={cellSize * 1.2} stroke={statusColor} strokeWidth={1} opacity={0.4} />
+          <Circle radius={cellSize * 1.5} stroke={statusColor} strokeWidth={1} opacity={0.25} />
+          <Circle radius={cellSize * 1.8} stroke={statusColor} strokeWidth={1} opacity={0.1} />
         </>
       )}
 
-      {/* Path projection */}
+      {/* Active Route Projection Line */}
       {robot.path && robot.path.length > 0 && (
         <Line
           points={[0, 0, ...robot.path.flatMap(p => [(p.col - robot.col) * cellSize, (p.row - robot.row) * cellSize])]}
-          stroke="#008CC9"
-          strokeWidth={2}
-          opacity={0.6}
-          dash={[4, 2]}
+          stroke={isSelected ? "#42BFE5" : "#454C50"}
+          strokeWidth={isSelected ? 2.5 : 1.5}
+          opacity={isSelected ? 0.9 : 0.5}
+          dash={isSelected ? [6, 3] : [4, 4]}
+          lineCap="round"
+          lineJoin="round"
         />
       )}
     </Group>

@@ -8,9 +8,9 @@ import { WarehouseWorkspace } from '../components/workspace/WarehouseWorkspace';
 import { ComponentPalette } from '../components/palette/ComponentPalette';
 import { InspectorPanel } from '../components/inspector/InspectorPanel';
 import { SimulationControls } from '../components/simulation/SimulationControls';
-import { RobotCommunicationPanel } from '../components/communication/RobotCommunicationPanel';
 import { TaskManagementPanel } from '../components/task/TaskManagementPanel';
 import { RobotFleetSection } from '../components/robot/RobotFleetSection';
+import { ManageRobotsModal } from '../components/robot/ManageRobotsModal';
 import { useTaskStore } from '../store/taskStore';
 
 export default function SimulatorPage() {
@@ -36,10 +36,10 @@ export default function SimulatorPage() {
       <TitleBar />
       <MenuBar />
       <Toolbar />
+      <ManageRobotsModal />
       
       <div className="flex-1 flex overflow-hidden relative">
         <WarehouseWorkspace />
-        <RobotCommunicationPanel />
         <InspectorPanel />
 
         {activeView === 'TASKS' && (

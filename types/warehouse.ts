@@ -115,6 +115,7 @@ export type Robot = {
   isOnline?: boolean;
   failureStatus?: 'NORMAL' | 'OFFLINE' | 'ERROR' | 'COMMUNICATION_LOST';
   recoveryStatus?: 'NONE' | 'RECOVERY_IN_PROGRESS' | 'RECOVERED';
+  assetUrl?: string;
 } & Partial<ObjectTransform>;
 
 export type LayoutSnapshot = {

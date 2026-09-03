@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800">
+<defs>
+  <pattern id="grid" width="80" height="80" patternUnits="userSpaceOnUse">
+    <rect width="80" height="80" fill="#30363a"/>
+    <path d="M80 0H0V80" fill="none" stroke="#454c50" stroke-width="1.5" opacity=".55"/>
+    <path d="M40 0V80M0 40H80" stroke="#3a4145" stroke-width="1" opacity=".22"/>
+  </pattern>
+  <filter id="noise"><feTurbulence type="fractalNoise" baseFrequency=".035" numOctaves="2" stitchTiles="stitch"/><feColorMatrix values="0 0 0 0 .3 0 0 0 0 .34 0 0 0 0 .36 0 0 0 .18 0"/></filter>
+</defs>
+<rect width="1200" height="800" fill="url(#grid)"/>
+<rect width="1200" height="800" filter="url(#noise)" opacity=".12"/>
+<g fill="none" stroke="#6d7478" opacity=".16">
+  <path d="M120 180h170M760 120h240M330 620h300M900 520h180"/>
+</g>
+</svg>

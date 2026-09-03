@@ -39,12 +39,12 @@ export const Warehouse3D: React.FC = () => {
   );
 
   return (
-    <div className="w-full h-full relative" style={{ background: '#1a1a2e' }}>
+    <div className="w-full h-full relative" style={{ background: '#e2e8f0' }}>
       <Canvas
         shadows
         gl={{ antialias: true, alpha: false }}
         onCreated={({ gl }) => {
-          gl.setClearColor('#1a1a2e');
+          gl.setClearColor('#e2e8f0');
         }}
         onPointerMissed={() => useWarehouseStore.getState().setSelectedItem(null, null)}
       >
@@ -71,12 +71,13 @@ export const Warehouse3D: React.FC = () => {
           zoomSpeed={0.8}
         />
 
-        <ambientLight intensity={0.5} color="#e8e8ff" />
-        <hemisphereLight color="#b1e1ff" groundColor="#333333" intensity={0.4} />
+        {/* High Brightness Industrial Factory Lighting */}
+        <ambientLight intensity={1.3} color="#ffffff" />
+        <hemisphereLight color="#ffffff" groundColor="#94a3b8" intensity={0.8} />
         <directionalLight
           castShadow
-          position={[centerX + 200, 500, centerZ - 200]}
-          intensity={1.0}
+          position={[centerX + 300, 600, centerZ + 200]}
+          intensity={1.5}
           shadow-mapSize-width={2048}
           shadow-mapSize-height={2048}
           shadow-camera-left={-warehouseWidth * 0.6}
@@ -86,6 +87,11 @@ export const Warehouse3D: React.FC = () => {
           shadow-camera-near={1}
           shadow-camera-far={1500}
           shadow-bias={-0.001}
+        />
+        <directionalLight
+          position={[centerX - 300, 400, centerZ - 200]}
+          intensity={0.8}
+          color="#f1f5f9"
         />
 
         <Suspense fallback={null}>
