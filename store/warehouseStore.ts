@@ -273,7 +273,7 @@ function clampMove(
 
 export const useWarehouseStore = create<WarehouseState>((set, get) => ({
   viewMode: '2D',
-  appMode: 'BUILDER',
+  appMode: 'PLAY',
   transformMode: 'translate',
   activeTool: 'select',
   historyStack: [initialLayout],
