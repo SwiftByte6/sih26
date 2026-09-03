@@ -25,8 +25,8 @@ export default function SimulatorPage() {
     return (
       <div className="h-screen w-screen flex flex-col bg-white overflow-hidden text-text select-none">
         <TitleBar />
-        <MenuBar />
         <Toolbar />
+        <MenuBar />
       </div>
     );
   }
@@ -34,8 +34,9 @@ export default function SimulatorPage() {
   return (
     <div className="h-screen w-screen flex flex-col bg-white overflow-hidden text-text select-none">
       <TitleBar />
-      <MenuBar />
+     
       <Toolbar />
+       <MenuBar />
       <ManageRobotsModal />
       
       <div className="flex-1 flex overflow-hidden relative">
