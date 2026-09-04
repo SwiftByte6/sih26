@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from 'react';
 import {
   Plus,
-  Upload,
   Save,
   Download,
   CheckCircle2,
@@ -20,7 +19,7 @@ import {
 import { useTaskStore } from '../../store/taskStore';
 import { useWarehouseStore } from '../../store/warehouseStore';
 import { AddTaskModal } from './AddTaskModal';
-import { UploadTaskListModal } from './UploadTaskListModal';
+
 import { TaskStatus, TaskPriority, Task } from '../../types/task';
 
 export const TaskManagementPanel: React.FC = () => {
@@ -29,11 +28,13 @@ export const TaskManagementPanel: React.FC = () => {
     updatePriority,
     deleteTask,
     saveTasks,
+    // loadTasks retained for backward compatibility
     loadTasks,
+    importTasks,
   } = useTaskStore();
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+
   const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -77,23 +78,36 @@ export const TaskManagementPanel: React.FC = () => {
   const handleLoadFromFile = () => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.json, application/json';
+    input.accept = '.json,.csv,.xlsx';
     input.onchange = (e: any) => {
       const file = e.target?.files?.[0];
-      if (file) {
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-          const content = ev.target?.result as string;
-          if (content) {
-            const success = loadTasks(content);
-            if (success) {
-              setFeedbackMsg({ type: 'success', text: 'Master Task List state restored successfully.' });
-            } else {
-              setFeedbackMsg({ type: 'error', text: 'Failed to restore tasks. Invalid JSON state format.' });
-            }
-            setTimeout(() => setFeedbackMsg(null), 4000);
+      if (!file) return;
+
+      const ext = file.name.split('.').pop()?.toLowerCase();
+      const reader = new FileReader();
+
+      reader.onload = async (ev) => {
+        const content = ev.target?.result;
+        if (!content) return;
+        try {
+          const { parseTaskFile } = await import('../../utils/taskFileParser');
+          const tasks = parseTaskFile(content as any, ext!);
+          const success = importTasks(tasks);
+          if (success) {
+            setFeedbackMsg({ type: 'success', text: `Loaded ${tasks.length} tasks from ${ext?.toUpperCase()} file.` });
+          } else {
+            setFeedbackMsg({ type: 'error', text: 'Failed to import tasks.' });
           }
-        };
+        } catch (err) {
+          console.error(err);
+          setFeedbackMsg({ type: 'error', text: 'Error parsing task file.' });
+        }
+        setTimeout(() => setFeedbackMsg(null), 4000);
+      };
+
+      if (ext === 'xlsx') {
+        reader.readAsArrayBuffer(file);
+      } else {
         reader.readAsText(file);
       }
     };
@@ -180,13 +194,7 @@ export const TaskManagementPanel: React.FC = () => {
             + Add Task
           </button>
 
-          <button
-            onClick={() => setIsUploadModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-app border border-border rounded text-[12px] font-medium text-text hover:bg-workspace transition-colors"
-          >
-            <Upload size={15} />
-            Upload Task List
-          </button>
+
 
           <div className="w-px h-5 bg-border mx-1" />
 
@@ -303,14 +311,14 @@ export const TaskManagementPanel: React.FC = () => {
                 <th className="p-3 border-r border-border">WEIGHT</th>
                 <th className="p-3 border-r border-border">STATUS</th>
                 <th className="p-3 border-r border-border">ASSIGNED AMR</th>
-                <th className="p-3 text-center">ACTIONS</th>
+                <th className="p-3 border-r border-border">DELETE</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {filteredTasks.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="p-8 text-center text-muted">
-                    No tasks found. Click <strong>+ Add Task</strong> or <strong>Upload Task List</strong> to get started.
+                    No tasks found. Click <strong>+ Add Task</strong> to get started.
                   </td>
                 </tr>
               ) : (
@@ -502,7 +510,7 @@ export const TaskManagementPanel: React.FC = () => {
 
       {/* Modals */}
       <AddTaskModal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} />
-      <UploadTaskListModal isOpen={isUploadModalOpen} onClose={() => setIsUploadModalOpen(false)} />
+
     </div>
   );
 };

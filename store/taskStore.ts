@@ -856,48 +856,37 @@ export const useTaskStore = create<TaskState>()(
 
   resetTasks: () => set({ tasks: INITIAL_DEMO_TASKS }),
   clearTasks: () => set({ tasks: [] }),
+// Import tasks directly from an array (used by multi‑format loader)
+  importTasks: (tasks: Task[]) => {
+    const normalized = tasks.map((t) => ({
+      ...t,
+      task_id: String(t.task_id).toUpperCase(),
+      task_type: (t.task_type as TaskType) ?? 'DELIVER_ITEM',
+      pickup_point: String(t.pickup_point),
+      drop_point: String(t.drop_point),
+      priority: (t.priority as TaskPriority) ?? 'NORMAL',
+      weight: Number(t.weight) >= 0 ? Number(t.weight) : 10,
+      status: (t.status as TaskStatus) ?? 'PENDING',
+      assigned_robot_id: t.assigned_robot_id ?? null,
+      created_time: t.created_time ?? new Date().toISOString(),
+      assigned_time: t.assigned_time ?? null,
+      started_time: t.started_time ?? null,
+      completed_time: t.completed_time ?? null,
+      failed_time: t.failed_time ?? null,
+      reassigned_count: Number(t.reassigned_count) ?? 0,
+      failure_reason: t.failure_reason ?? null,
+    } as Task));
+    set(() => ({ tasks: normalized }));
+    return true;
+  },
+
+  // Legacy JSON loader – kept for backward compatibility
   loadTasks: (jsonContent) => {
     try {
       const parsed = JSON.parse(jsonContent);
       const tasksArray: Task[] = Array.isArray(parsed) ? parsed : parsed.tasks || [];
-
       if (!Array.isArray(tasksArray) || tasksArray.length === 0) return false;
-
-      // Validate saved task items preserve exact Task ID, status, assignment, etc.
-      const validTasks: Task[] = [];
-      for (const t of tasksArray) {
-        const rawPickup = t.pickup_point || (t as any).source || (t as any).pickup || '';
-        const rawDrop = t.drop_point || (t as any).target || (t as any).destination || (t as any).drop || '';
-
-        if (!t.task_id || !rawPickup || !rawDrop) {
-          console.error('Invalid task structure in saved state file:', t);
-          return false;
-        }
-
-        validTasks.push({
-          task_id: String(t.task_id).toUpperCase(),
-          task_type: (t.task_type || (t as any).taskType || 'DELIVER_ITEM') as TaskType,
-          pickup_point: String(rawPickup),
-          drop_point: String(rawDrop),
-          priority: (t.priority || 'NORMAL') as TaskPriority,
-          weight: Number(t.weight) >= 0 ? Number(t.weight) : 10,
-          status: (t.status || 'PENDING') as TaskStatus,
-          assigned_robot_id: t.assigned_robot_id || (t as any).assignedRobotId || null,
-          created_time: t.created_time || (t as any).createdAt || new Date().toISOString(),
-          assigned_time: t.assigned_time || (t as any).assignedAt || null,
-          started_time: t.started_time || (t as any).startedAt || null,
-          completed_time: t.completed_time || (t as any).completedAt || null,
-          failed_time: t.failed_time || (t as any).failedAt || null,
-          reassigned_count: Number(t.reassigned_count) || 0,
-          failure_reason: t.failure_reason || (t as any).failureReason || null,
-        });
-      }
-
-      set(() => ({
-        tasks: validTasks,
-      }));
-
-      return true;
+      return get().importTasks(tasksArray);
     } catch (e) {
       console.error('Failed to parse saved task state JSON:', e);
       return false;

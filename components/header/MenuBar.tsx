@@ -13,7 +13,8 @@ import {
   HelpCircle,
   Check,
   LayoutGrid,
-} from 'lucide-react';
+ } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { useTaskStore } from '../../store/taskStore';
 import { useWarehouseStore } from '../../store/warehouseStore';
 
@@ -60,6 +61,7 @@ export const MenuBar: React.FC = () => {
   const openManageRobots = useWarehouseStore((s) => s.openManageRobots);
   const setSimSpeed = useWarehouseStore((s) => s.setSimSpeed);
   const simSpeed = useWarehouseStore((s) => s.simSpeed);
+  const router = useRouter();
 
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const navRef = useRef<HTMLDivElement>(null);
@@ -238,10 +240,10 @@ export const MenuBar: React.FC = () => {
       { label: 'Speed 4.0x', checked: simSpeed === 4.0, action: () => setSimSpeed(4.0) },
     ],
     Analytics: [
-      { label: 'Fleet Throughput & Efficiency' },
-      { label: 'Task Execution Latency' },
-      { label: 'P2P Network Messages' },
-      { label: 'Collision Logs' },
+      { label: 'Fleet Throughput & Efficiency', action: () => router.push('/analytics/fleet-throughput') },
+      { label: 'Task Execution Latency', action: () => router.push('/analytics/task-latency') },
+      { label: 'P2P Network Messages', action: () => router.push('/analytics/p2p-messages') },
+      { label: 'Collision Avoidance Performance', action: () => router.push('/analytics/collision-performance') },
     ],
     Help: [
       {
