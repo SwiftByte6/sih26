@@ -620,6 +620,9 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
     
     const updatedRobots = state.robots.map((r) => {
       if (r.id === robotId) {
+        if (r.currentTaskId === task.task_id && (r.state === 'MOVING' || r.taskPhase === 'TO_DROP')) {
+          return r;
+        }
         let newPath = r.path;
         let newState = r.state;
         if (pickupCoord && dropCoord) {

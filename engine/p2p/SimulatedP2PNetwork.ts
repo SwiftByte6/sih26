@@ -572,30 +572,35 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
             const useWarehouseStore = require('../../store/warehouseStore').useWarehouseStore.getState;
             
             const taskStore = useTaskStore();
-            console.log(`[P2P] assignment result triggering for ${taskId}`);
-            taskStore.receiveAssignmentResult(taskId, ownerRobotId);
+            const globalTask = taskStore.getTask(taskId);
+            const alreadyGloballyAssigned = globalTask && globalTask.assigned_robot_id === ownerRobotId && (globalTask.status === 'ASSIGNED' || globalTask.status === 'IN_PROGRESS');
 
-            const warehouseStore = useWarehouseStore();
-            const task = taskStore.getTask(taskId);
-            if (task && task.handoverAudit?.originalRobotId) {
-              const executeHandoverAssignment = require('../recovery/TaskHandoverManager').executeHandoverAssignment;
-              executeHandoverAssignment(
-                ownerRobotId,
-                task,
-                task.handoverAudit.handoverPhase || 'TO_PICKUP',
-                task.handoverAudit.originalRobotId,
-                task.handoverAudit.handoverReason
-              );
-            } else if (task && task.recoveryAudit?.failedRobotId) {
-              const executeRecoveryAssignment = require('../recovery/FailureRecoveryManager').executeRecoveryAssignment;
-              executeRecoveryAssignment(
-                ownerRobotId,
-                task,
-                task.recoveryAudit.recoveryPhase || 'TO_PICKUP',
-                message.payload?.lastKnownPosition || { col: 5, row: 5 }
-              );
-            } else if (task) {
-              warehouseStore.assignTaskToRobot(ownerRobotId, task);
+            if (!alreadyGloballyAssigned) {
+              console.log(`[P2P] assignment result triggering for ${taskId}`);
+              taskStore.receiveAssignmentResult(taskId, ownerRobotId);
+
+              const warehouseStore = useWarehouseStore();
+              const task = taskStore.getTask(taskId);
+              if (task && task.handoverAudit?.originalRobotId) {
+                const executeHandoverAssignment = require('../recovery/TaskHandoverManager').executeHandoverAssignment;
+                executeHandoverAssignment(
+                  ownerRobotId,
+                  task,
+                  task.handoverAudit.handoverPhase || 'TO_PICKUP',
+                  task.handoverAudit.originalRobotId,
+                  task.handoverAudit.handoverReason
+                );
+              } else if (task && task.recoveryAudit?.failedRobotId) {
+                const executeRecoveryAssignment = require('../recovery/FailureRecoveryManager').executeRecoveryAssignment;
+                executeRecoveryAssignment(
+                  ownerRobotId,
+                  task,
+                  task.recoveryAudit.recoveryPhase || 'TO_PICKUP',
+                  message.payload?.lastKnownPosition || { col: 5, row: 5 }
+                );
+              } else if (task) {
+                warehouseStore.assignTaskToRobot(ownerRobotId, task);
+              }
             }
           } catch (e) {}
         }
