@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="70" viewBox="0 0 360 70">
+<defs><filter id="s"><feGaussianBlur stdDeviation="4"/></filter></defs>
+<ellipse cx="180" cy="60" rx="160" ry="7" fill="#000" opacity=".25" filter="url(#s)"/>
+<rect x="10" y="10" width="340" height="42" rx="3" fill="#596165" stroke="#2b3337" stroke-width="4"/>
+<path d="M18 21h324M18 40h324" stroke="#747d81" stroke-width="2" opacity=".6"/>
+<path d="M60 11v40M120 11v40M180 11v40M240 11v40M300 11v40" stroke="#3c4549" stroke-width="2"/>
+</svg>

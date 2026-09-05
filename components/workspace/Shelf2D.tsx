@@ -1,14 +1,18 @@
 'use client';
 
 import React from 'react';
-import { Group, Rect, Text } from 'react-konva';
+import { Group, Rect, Text, Image as KonvaImage } from 'react-konva';
 import { Shelf } from '../../types/warehouse';
 import { useWarehouseStore } from '../../store/warehouseStore';
+import { useSvgImage } from '../../lib/useSvgImage';
 
 export const Shelf2D: React.FC<{ shelf: Shelf }> = ({ shelf }) => {
   const { selectedItemId, setSelectedItem, updateShelf, cellSize, appMode } = useWarehouseStore();
+  const shelfImg = useSvgImage('/assets/warehouse/shelf.svg');
   const isSelected = selectedItemId === shelf.id;
   const builder = appMode === 'BUILDER';
+  const w = shelf.width * cellSize;
+  const h = shelf.height * cellSize;
 
   return (
     <Group
@@ -27,31 +31,32 @@ export const Shelf2D: React.FC<{ shelf: Shelf }> = ({ shelf }) => {
     >
       {isSelected && (
         <Rect
-          x={-4}
-          y={-4}
-          width={shelf.width * cellSize + 8}
-          height={shelf.height * cellSize + 8}
-          stroke="#008CC9"
+          x={-3}
+          y={-3}
+          width={w + 6}
+          height={h + 6}
+          stroke="#42BFE5"
           strokeWidth={2}
-          dash={[6, 4]}
+          dash={[4, 4]}
+          cornerRadius={2}
         />
       )}
-      <Rect
-        width={shelf.width * cellSize}
-        height={shelf.height * cellSize}
-        fill="#D9E1E8"
-        stroke={isSelected ? '#008CC9' : '#9AA7B2'}
-        strokeWidth={isSelected ? 3 : 1}
-      />
+      {shelfImg ? (
+        <KonvaImage image={shelfImg} width={w} height={h} />
+      ) : (
+        <Rect width={w} height={h} fill="#30363A" stroke="#454C50" strokeWidth={1} cornerRadius={2} />
+      )}
       <Text
-        text={`SHELF ${shelf.id}`}
-        width={shelf.width * cellSize}
-        height={shelf.height * cellSize}
+        text={shelf.id}
+        width={w}
+        height={h}
         align="center"
         verticalAlign="middle"
-        fill="#52606D"
-        fontSize={10}
+        fill="#F1F5F6"
+        fontSize={11}
         fontStyle="bold"
+        shadowColor="black"
+        shadowBlur={3}
       />
     </Group>
   );

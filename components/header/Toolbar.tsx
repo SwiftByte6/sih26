@@ -9,40 +9,47 @@ function ModeViewToggles() {
   const setAppMode = useWarehouseStore((s) => s.setAppMode);
   const viewMode = useWarehouseStore((s) => s.viewMode);
   const setViewMode = useWarehouseStore((s) => s.setViewMode);
-  const applyLayout = useWarehouseStore((s) => s.applyLayout);
   const showSensors = useWarehouseStore((s) => s.showSensors);
   const toggleSensors = useWarehouseStore((s) => s.toggleSensors);
 
   return (
     <div className="flex items-center gap-3">
-      <div className="flex items-center gap-1">
-        <span className="text-[10px] font-bold text-muted tracking-wider">MODE</span>
-        <div className="flex bg-app border border-border rounded-sm overflow-hidden">
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10px] font-bold text-muted tracking-wider uppercase">MODE</span>
+        <div className="flex bg-app border border-border rounded-sm overflow-hidden p-0.5">
           <button
-            className={`px-2 py-1 text-[11px] font-semibold ${appMode === 'BUILDER' ? 'bg-accent text-white' : 'text-text hover:bg-toolbar'}`}
+            className={`px-2.5 py-0.5 text-[11px] font-semibold rounded-xs transition-colors ${
+              appMode === 'BUILDER' ? 'bg-accent text-white shadow-xs' : 'text-muted hover:text-text'
+            }`}
             onClick={() => setAppMode('BUILDER')}
           >
-            BUILDER
+            Builder
           </button>
           <button
-            className={`px-2 py-1 text-[11px] font-semibold ${appMode === 'PLAY' ? 'bg-accent text-white' : 'text-text hover:bg-toolbar'}`}
+            className={`px-2.5 py-0.5 text-[11px] font-semibold rounded-xs transition-colors ${
+              appMode === 'PLAY' ? 'bg-accent text-white shadow-xs' : 'text-muted hover:text-text'
+            }`}
             onClick={() => setAppMode('PLAY')}
           >
-            PLAY
+            Simulation
           </button>
         </div>
       </div>
-      <div className="flex items-center gap-1">
-        <span className="text-[10px] font-bold text-muted tracking-wider">VIEW</span>
-        <div className="flex bg-app border border-border rounded-sm overflow-hidden">
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10px] font-bold text-muted tracking-wider uppercase">VIEW</span>
+        <div className="flex bg-app border border-border rounded-sm overflow-hidden p-0.5">
           <button
-            className={`px-2 py-1 text-[11px] font-semibold ${viewMode === '2D' ? 'bg-white text-accent' : 'text-text hover:bg-toolbar'}`}
+            className={`px-2.5 py-0.5 text-[11px] font-semibold rounded-xs transition-colors ${
+              viewMode === '2D' ? 'bg-white text-accent shadow-xs' : 'text-muted hover:text-text'
+            }`}
             onClick={() => setViewMode('2D')}
           >
             2D
           </button>
           <button
-            className={`px-2 py-1 text-[11px] font-semibold ${viewMode === '3D' ? 'bg-white text-accent' : 'text-text hover:bg-toolbar'}`}
+            className={`px-2.5 py-0.5 text-[11px] font-semibold rounded-xs transition-colors ${
+              viewMode === '3D' ? 'bg-white text-accent shadow-xs' : 'text-muted hover:text-text'
+            }`}
             onClick={() => setViewMode('3D')}
           >
             3D
@@ -50,52 +57,43 @@ function ModeViewToggles() {
         </div>
       </div>
       <button
-        className={`flex items-center gap-1 px-2 py-1 rounded-sm text-[11px] border ${showSensors ? 'bg-accent text-white border-accent' : 'border-border text-muted'}`}
+        className={`flex items-center gap-1 px-2 py-1 rounded-sm text-[11px] border transition-colors ${
+          showSensors ? 'bg-accent text-white border-accent' : 'border-border text-muted hover:text-text'
+        }`}
         onClick={toggleSensors}
         title="Sensor visualization"
       >
-        <Radar size={12} />
+        <Radar size={13} />
       </button>
-      {appMode === 'BUILDER' && (
-        <button
-          className="px-2 py-1 bg-success text-white rounded-sm text-[11px] font-semibold"
-          onClick={() => {
-            const res = applyLayout();
-            if (!res.ok) alert(`Cannot apply layout. There are ${res.issues.filter(i => i.severity === 'error').length} blocking errors. Please check the Builder Sidebar.`);
-          }}
-        >
-          APPLY LAYOUT
-        </button>
-      )}
     </div>
   );
 }
 
 const TOOLBAR_GROUPS = [
   [
-    { icon: File, label: 'New' },
-    { icon: FolderOpen, label: 'Open' },
-    { icon: Save, label: 'Save' }
+    { icon: MousePointer2, label: 'Select', tooltip: 'Select Tool (Pointer)' },
+    { icon: Move, label: 'Pan', tooltip: 'Pan Tool (Drag Canvas)' },
   ],
   [
-    { icon: Undo, label: 'Undo' },
-    { icon: Redo, label: 'Redo' }
+    { icon: ZoomIn, label: 'Zoom +', tooltip: 'Zoom In (+20%)' },
+    { icon: ZoomOut, label: 'Zoom -', tooltip: 'Zoom Out (-20%)' },
+    { icon: Maximize, label: 'Fit', tooltip: 'Reset / Fit View' },
   ],
   [
-    { icon: MousePointer2, label: 'Select' },
-    { icon: Move, label: 'Pan' },
-    { icon: ZoomIn, label: 'Zoom +' },
-    { icon: ZoomOut, label: 'Zoom -' },
-    { icon: Maximize, label: 'Fit' },
-    { icon: Grid3X3, label: 'Grid' }
-  ]
+    { icon: Grid3X3, label: 'Grid', tooltip: 'Toggle Grid Overlay' },
+  ],
 ];
 
 export const Toolbar: React.FC = () => {
-  const toggleSimulation = useWarehouseStore(state => state.toggleSimulation);
-  const isRunning = useWarehouseStore(state => state.isRunning);
-  const toggleGrid = useWarehouseStore(state => state.toggleGrid);
-  const showGrid = useWarehouseStore(state => state.showGrid);
+  const toggleSimulation = useWarehouseStore((state) => state.toggleSimulation);
+  const isRunning = useWarehouseStore((state) => state.isRunning);
+  const showGrid = useWarehouseStore((state) => state.showGrid);
+  const toggleGrid = useWarehouseStore((state) => state.toggleGrid);
+  const activeTool = useWarehouseStore((state) => state.activeTool);
+  const setActiveTool = useWarehouseStore((state) => state.setActiveTool);
+  const zoomIn = useWarehouseStore((state) => state.zoomIn);
+  const zoomOut = useWarehouseStore((state) => state.zoomOut);
+  const zoomFit = useWarehouseStore((state) => state.zoomFit);
   const [showImport, setShowImport] = useState(false);
   const [showReconstruction, setShowReconstruction] = useState(false);
 
@@ -109,10 +107,12 @@ export const Toolbar: React.FC = () => {
       const { open } = await import('@tauri-apps/plugin-dialog');
       const file = await open({
         multiple: false,
-        filters: [{
-          name: 'Map Images',
-          extensions: ['png', 'jpg', 'jpeg', 'pdf', 'svg']
-        }]
+        filters: [
+          {
+            name: 'Map Images',
+            extensions: ['png', 'jpg', 'jpeg', 'pdf', 'svg'],
+          },
+        ],
       });
       if (file) {
         handlePreview();
@@ -123,108 +123,46 @@ export const Toolbar: React.FC = () => {
   };
 
   const handleToolbarClick = async (label: string) => {
-    if (label === 'New') {
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('amr-warehouse-layout');
-        window.location.reload();
-      }
-    } else if (label === 'Open') {
-      const isTauri = typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI_IPC__' in window);
-      if (isTauri) {
-        try {
-          const { open } = await import('@tauri-apps/plugin-dialog');
-          const file = await open({ filters: [{ name: 'Config', extensions: ['json'] }] });
-          if (file) {
-            const { readTextFile } = await import('@tauri-apps/plugin-fs');
-            const path = typeof file === 'string' ? file : (file as any).path;
-            if (path) {
-              const content = await readTextFile(path);
-              const parsed = JSON.parse(content);
-              if (parsed && parsed.shelves && parsed.robots) {
-                useWarehouseStore.getState().loadLayout(parsed);
-              } else {
-                alert("Invalid layout file format");
-              }
-            }
-          }
-        } catch (e) {
-          console.error("Tauri Open failed", e);
-        }
-      } else {
-        // Web fallback
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.json';
-        input.onchange = async (e) => {
-          const file = (e.target as HTMLInputElement).files?.[0];
-          if (file) {
-            try {
-              const text = await file.text();
-              const parsed = JSON.parse(text);
-              if (parsed && parsed.shelves && parsed.robots) {
-                useWarehouseStore.getState().loadLayout(parsed);
-              } else {
-                alert("Invalid layout file format");
-              }
-            } catch (err) {
-              console.error("Failed to parse file", err);
-              alert("Failed to parse file");
-            }
-          }
-        };
-        input.click();
-      }
-    } else if (label === 'Save') {
-      const isTauri = typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI_IPC__' in window);
-      const snap = useWarehouseStore.getState().getSnapshot();
-      const json = JSON.stringify(snap, null, 2);
-      
-      if (isTauri) {
-        try {
-          const { save } = await import('@tauri-apps/plugin-dialog');
-          const file = await save({ filters: [{ name: 'Config', extensions: ['json'] }] });
-          if (file) {
-            const { writeTextFile } = await import('@tauri-apps/plugin-fs');
-            await writeTextFile(file, json);
-          }
-        } catch (e) {
-          console.error("Tauri Save failed", e);
-        }
-      } else {
-        // Web fallback
-        const blob = new Blob([json], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'warehouse-layout.json';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }
+    if (label === 'Select') {
+      setActiveTool('select');
+    } else if (label === 'Pan') {
+      setActiveTool('pan');
+    } else if (label === 'Zoom +') {
+      zoomIn();
+    } else if (label === 'Zoom -') {
+      zoomOut();
+    } else if (label === 'Fit') {
+      zoomFit();
     } else if (label === 'Grid') {
       toggleGrid();
     }
   };
 
+  const isToolActive = (label: string) => {
+    if (label === 'Select') return activeTool === 'select';
+    if (label === 'Pan') return activeTool === 'pan';
+    if (label === 'Grid') return showGrid;
+    return false;
+  };
+
   return (
     <>
-      <div className="h-[36px] bg-toolbar flex items-center px-2 border-b border-border gap-2">
+      <div className="h-[36px] bg-toolbar flex items-center px-3 border-b border-border gap-2 select-none">
         {TOOLBAR_GROUPS.map((group, groupIdx) => (
           <React.Fragment key={groupIdx}>
             <div className="flex items-center gap-1">
               {group.map((tool) => (
                 <button
                   key={tool.label}
-                  className={`flex items-center justify-center p-1.5 hover:bg-app rounded-sm transition-colors ${
-                    tool.label === 'Grid' && showGrid 
-                      ? 'bg-app text-accent' 
-                      : 'text-muted hover:text-text'
+                  className={`flex items-center justify-center p-1.5 rounded-sm transition-colors ${
+                    isToolActive(tool.label)
+                      ? 'bg-accent text-white font-bold shadow-xs'
+                      : 'text-muted hover:text-text hover:bg-app'
                   }`}
-                  title={tool.label}
+                  title={tool.tooltip}
                   onClick={() => handleToolbarClick(tool.label)}
                 >
-                  <tool.icon size={16} />
+                  <tool.icon size={15} />
                 </button>
               ))}
             </div>
@@ -233,34 +171,26 @@ export const Toolbar: React.FC = () => {
             )}
           </React.Fragment>
         ))}
-        
-        <div className="w-px h-5 bg-border mx-1" />
-        
-        <button
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-[12px] font-medium text-text hover:bg-app transition-colors"
-          onClick={handleNativeImport}
-        >
-          <Upload size={14} />
-          Import Map
-        </button>
-        
+
         <div className="flex-1" />
 
-        <div className="flex items-center gap-3 mr-3">
+        <div className="flex items-center gap-4 mr-2">
           <ModeViewToggles />
+
+          {/* Strongest Header Action Button: Run Simulation */}
+          <button
+            className={`flex items-center gap-2 px-4 py-1.5 rounded-sm text-[12px] font-bold tracking-wide transition-all shadow-xs ${
+              isRunning
+                ? 'bg-danger hover:bg-opacity-90 text-white animate-pulse'
+                : 'bg-accent hover:brightness-110 text-white ring-2 ring-accent/30'
+            }`}
+            onClick={toggleSimulation}
+            title={isRunning ? 'Stop Running Simulation' : 'Run Warehouse Simulation'}
+          >
+            <Play size={14} className={isRunning ? 'fill-current' : ''} />
+            {isRunning ? 'Stop Simulation' : 'Run Simulation'}
+          </button>
         </div>
-        
-        <button 
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-[12px] font-medium transition-colors mr-2 ${
-            isRunning 
-              ? 'bg-danger hover:bg-opacity-80 text-white' 
-              : 'bg-accent hover:bg-opacity-80 text-white'
-          }`}
-          onClick={toggleSimulation}
-        >
-          <Play size={14} className={isRunning ? 'fill-current' : ''} />
-          {isRunning ? 'Stop' : 'Run'}
-        </button>
       </div>
 
       {showImport && (

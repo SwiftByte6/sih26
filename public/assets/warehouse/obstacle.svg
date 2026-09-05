@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="130" height="110" viewBox="0 0 130 110">
+<defs><filter id="s"><feGaussianBlur stdDeviation="4"/></filter></defs>
+<ellipse cx="65" cy="88" rx="48" ry="9" fill="#000" opacity=".28" filter="url(#s)"/>
+<g transform="rotate(-7 65 55)">
+<rect x="22" y="38" width="48" height="35" rx="4" fill="#9b7049" stroke="#5e4734" stroke-width="3"/>
+<path d="M22 48h48M46 38v35" stroke="#c99a68" stroke-width="2" opacity=".7"/>
+<rect x="65" y="27" width="42" height="30" rx="4" fill="#6f7778" stroke="#3c4548" stroke-width="3"/>
+<path d="M69 31h34v22H69z" fill="#4f585b"/>
+<rect x="79" y="63" width="25" height="15" rx="3" fill="#b58655"/>
+<path d="M15 78l13-7 10 7-8 9zM104 68l12 5-5 10-13-5z" fill="#c2a16f"/>
+</g>
+</svg>
