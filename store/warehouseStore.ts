@@ -549,9 +549,12 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
     try {
       useP2PStore.getState().network.unregisterNode(id);
       useP2PStore.getState().processHeartbeats();
+      lastRobotTelemetry.delete(id);
+      blockedTicksMap.delete(id);
     } catch (e) {}
     set((state) => ({
       robots: state.robots.filter((r) => r.id !== id),
+      activeCommLinks: state.activeCommLinks.filter((l) => l.from !== id && l.to !== id),
       selectedItemId: state.selectedItemId === id ? null : state.selectedItemId,
       selectedItemType: state.selectedItemId === id ? null : state.selectedItemType,
     }));

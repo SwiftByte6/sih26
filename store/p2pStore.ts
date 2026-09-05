@@ -45,7 +45,14 @@ export const useP2PStore = create<P2PState>((set, get) => ({
     robotIds.forEach((id) => networkInstance.registerNode(id));
     const updatedNodes: Record<string, AmrAgentNode> = {};
     networkInstance.getAllNodes().forEach((node) => {
-      updatedNodes[node.robotId] = { ...node };
+      updatedNodes[node.robotId] = {
+        ...node,
+        peerList: { ...node.peerList },
+        knownTasks: { ...node.knownTasks },
+        inbox: [...node.inbox],
+        history: [...node.history],
+        stats: { ...node.stats },
+      };
     });
     set({ nodes: updatedNodes });
   },
@@ -110,7 +117,14 @@ export const useP2PStore = create<P2PState>((set, get) => ({
   processHeartbeats: () => {
     const updatedNodes: Record<string, AmrAgentNode> = {};
     networkInstance.getAllNodes().forEach((node) => {
-      updatedNodes[node.robotId] = { ...node };
+      updatedNodes[node.robotId] = {
+        ...node,
+        peerList: { ...node.peerList },
+        knownTasks: { ...node.knownTasks },
+        inbox: [...node.inbox],
+        history: [...node.history],
+        stats: { ...node.stats },
+      };
     });
     set({ nodes: updatedNodes });
   },
@@ -119,7 +133,14 @@ export const useP2PStore = create<P2PState>((set, get) => ({
     networkInstance.resetNetwork();
     const updatedNodes: Record<string, AmrAgentNode> = {};
     networkInstance.getAllNodes().forEach((node) => {
-      updatedNodes[node.robotId] = { ...node };
+      updatedNodes[node.robotId] = {
+        ...node,
+        peerList: { ...node.peerList },
+        knownTasks: { ...node.knownTasks },
+        inbox: [...node.inbox],
+        history: [...node.history],
+        stats: { ...node.stats },
+      };
     });
     set({ nodes: updatedNodes, testSummary: null });
   },

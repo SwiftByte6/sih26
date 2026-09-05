@@ -59,23 +59,35 @@ export function findNearestWalkableCell(
     return { row: targetRow, col: targetCol };
   }
 
-  // Search in expanding concentric rings up to radius 3
-  for (let radius = 1; radius <= 3; radius++) {
-    const candidates: { row: number; col: number }[] = [];
+  // Search in expanding concentric rings up to radius 4
+  for (let radius = 1; radius <= 4; radius++) {
+    const candidates: { row: number; col: number; distSq: number; isAxial: boolean }[] = [];
     for (let dr = -radius; dr <= radius; dr++) {
       for (let dc = -radius; dc <= radius; dc++) {
         if (Math.abs(dr) + Math.abs(dc) === radius) {
           const r = targetRow + dr;
           const c = targetCol + dc;
           if (isWalkable(state, r, c, avoidCells)) {
-            candidates.push({ row: r, col: c });
+            const distSq = dr * dr + dc * dc;
+            const isAxial = dr === 0 || dc === 0;
+            candidates.push({ row: r, col: c, distSq, isAxial });
           }
         }
       }
     }
     if (candidates.length > 0) {
-      return candidates[0];
+      // Sort candidates: prefer axial cardinal steps, then closest euclidean distance
+      candidates.sort((a, b) => {
+        if (a.isAxial !== b.isAxial) return a.isAxial ? -1 : 1;
+        return a.distSq - b.distSq;
+      });
+      return { row: candidates[0].row, col: candidates[0].col };
     }
+  }
+
+  // Fallback: If avoidCells was blocking, search again without avoidCells
+  if (avoidCells && avoidCells.size > 0) {
+    return findNearestWalkableCell(state, targetRow, targetCol);
   }
 
   return null;

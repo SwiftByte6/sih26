@@ -167,11 +167,23 @@ export function runTaskConsensusTestSuite(): ConsensusTestSummary {
   });
 
   // TEST 10: Incomplete Bid Info Waits for Decision Window
-  const incompleteWindowWait = true;
+  const net10 = new SimulatedP2PNetwork();
+  const n1 = net10.registerNode('AMR-01');
+  net10.registerNode('AMR-02');
+  net10.registerNode('AMR-03');
+
+  const task10: Task = { ...sampleTask, task_id: 'T-WIN-10' };
+  net10.broadcastMessage('TASK_DISPATCH', 'TASK_ANNOUNCEMENT', { taskId: 'T-WIN-10', task: task10 });
+  // Only AMR-01 sends bid (1 of 3 received)
+  net10.broadcastMessage('AMR-01', 'TASK_BID', { taskId: 'T-WIN-10', robotId: 'AMR-01', eligible: true, suitabilityScore: 85 });
+
+  const tk10 = n1.knownTasks['T-WIN-10'];
+  const hasPrematureProposal = tk10?.myProposalSent === true || tk10?.allocationState === 'PROPOSING';
+  const t10Passed = !hasPrematureProposal && Object.keys(tk10?.peerBids || {}).length < 3;
   results.push({
     testName: 'TEST 10: Incomplete Bid Info Waits for Bidding Window',
-    passed: incompleteWindowWait,
-    details: 'Bidding decision window prevents premature winner selection before all bids arrive',
+    passed: t10Passed,
+    details: t10Passed ? 'AMR-01 correctly withheld proposal until remaining peer bids arrive' : 'Failed: Premature proposal sent',
   });
 
   // TEST 11: Existing A* Execution Triggered for Winning AMR

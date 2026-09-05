@@ -63,6 +63,17 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
     this.nodes.delete(robotId);
     this.nodes.forEach((node) => {
       delete node.peerList[robotId];
+      if (node.knownTasks) {
+        Object.values(node.knownTasks).forEach((tk) => {
+          if (tk.peerBids) delete tk.peerBids[robotId];
+          if (tk.peerProposals) delete tk.peerProposals[robotId];
+          if (tk.claimedBy === robotId) {
+            tk.claimedBy = null;
+            tk.status = 'PENDING';
+            tk.allocationState = 'ANNOUNCED';
+          }
+        });
+      }
     });
   }
 
@@ -78,6 +89,27 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
       sender.stats.messagesSent++;
       if (message.type === 'HEARTBEAT') {
         sender.lastHeartbeatSent = message.timestamp;
+      }
+      if (message.type === 'TASK_BID' && message.payload?.taskId) {
+        const tk = sender.knownTasks?.[message.payload.taskId];
+        if (tk) {
+          tk.peerBids = tk.peerBids || {};
+          tk.peerBids[sender.robotId] = {
+            robotId: sender.robotId,
+            timestamp: message.timestamp,
+            eligible: message.payload.eligible ?? true,
+            suitabilityScore: message.payload.suitabilityScore ?? 0,
+            evaluation: message.payload.evaluation,
+          };
+        }
+      }
+      if (message.type === 'TASK_CLAIMED' && message.payload?.taskId) {
+        const tk = sender.knownTasks?.[message.payload.taskId];
+        if (tk) {
+          tk.claimedBy = message.payload.ownerRobotId;
+          tk.status = 'CLAIMED';
+          tk.allocationState = 'CLAIMED';
+        }
       }
     }
 
@@ -454,7 +486,7 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
               timestamp: message.timestamp,
             };
 
-            // Fix 5: Asynchronous consensus check
+            // Fix 5: Asynchronous consensus check with majority fallback & tie breaking
             const warehouseStoreState = require('../../store/warehouseStore').useWarehouseStore.getState();
             const onlineNodesCount = Array.from(this.nodes.values()).filter((n) => {
               if (!n.isOnline) return false;
@@ -465,26 +497,51 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
             const proposals = Object.values(taskKnowledge.peerProposals);
             const expectedProposalsCount = Math.max(1, onlineNodesCount);
 
-            const unanimousConsensus = proposals.length >= expectedProposalsCount && proposals.every((p) => p.proposedWinnerId === proposedWinnerId);
-            console.log(`[P2P] consensus check by ${targetNode.robotId} for ${taskId}: proposals=${proposals.length}/${expectedProposalsCount} unanimous=${unanimousConsensus}`);
+            // Tally proposal votes
+            const proposalCounts: Record<string, number> = {};
+            proposals.forEach((p) => {
+              if (p.proposedWinnerId) {
+                proposalCounts[p.proposedWinnerId] = (proposalCounts[p.proposedWinnerId] || 0) + 1;
+              }
+            });
 
-            if (unanimousConsensus && !taskKnowledge.claimedBy) {
+            let consensusWinner: string | null = null;
+            if (proposals.length >= expectedProposalsCount && Object.keys(proposalCounts).length > 0) {
+              const sortedCandidates = Object.keys(proposalCounts).sort((a, b) => {
+                if (proposalCounts[b] !== proposalCounts[a]) {
+                  return proposalCounts[b] - proposalCounts[a];
+                }
+                return a.localeCompare(b);
+              });
+
+              const topCandidate = sortedCandidates[0];
+              const topVotes = proposalCounts[topCandidate];
+              const majorityThreshold = Math.ceil(expectedProposalsCount / 2);
+
+              if (topVotes >= majorityThreshold) {
+                consensusWinner = topCandidate;
+              }
+            }
+
+            console.log(`[P2P] consensus check by ${targetNode.robotId} for ${taskId}: proposals=${proposals.length}/${expectedProposalsCount} winner=${consensusWinner}`);
+
+            if (consensusWinner && !taskKnowledge.claimedBy) {
               taskKnowledge.allocationState = 'CONSENSUS';
               const warehouseStoreState = require('../../store/warehouseStore').useWarehouseStore.getState();
               const myRobot = warehouseStoreState.robots.find((r: any) => r.id === targetNode.robotId);
               const isFreeToClaim = myRobot && (myRobot.state === 'WAITING' || myRobot.state === 'IDLE') && !myRobot.currentTask && !myRobot.currentTaskId;
 
-              if (targetNode.robotId === proposedWinnerId && isFreeToClaim) {
+              if (targetNode.robotId === consensusWinner && isFreeToClaim) {
                 console.log(`[P2P] task claimed by ${targetNode.robotId} for ${taskId}`);
-                taskKnowledge.claimedBy = proposedWinnerId;
+                taskKnowledge.claimedBy = consensusWinner;
                 taskKnowledge.status = 'CLAIMED';
                 taskKnowledge.allocationState = 'CLAIMED';
                 setTimeout(() => {
                   this.broadcastMessage(targetNode.robotId, 'TASK_CLAIMED', {
                     taskId,
-                    ownerRobotId: proposedWinnerId,
+                    ownerRobotId: consensusWinner,
                     allocationRound: taskKnowledge.allocationRound || 1,
-                    body: `TASK_CLAIMED: Task ${taskId} claimed by ${proposedWinnerId} via P2P Consensus (Round ${taskKnowledge.allocationRound || 1})!`,
+                    body: `TASK_CLAIMED: Task ${taskId} claimed by ${consensusWinner} via P2P Consensus (Round ${taskKnowledge.allocationRound || 1})!`,
                   });
                 }, 0);
               }
@@ -493,50 +550,55 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
         }
       }
 
-      // Handle TASK_CLAIMED: Synchronize local & global task ownership
+      // Handle TASK_CLAIMED: Synchronize local & global task ownership (Idempotent)
       if (message.type === 'TASK_CLAIMED' && message.payload?.taskId) {
         const taskId = message.payload.taskId;
         const ownerRobotId = message.payload.ownerRobotId;
         console.log(`[P2P] TASK_CLAIMED received by ${targetNode.robotId} for ${taskId} (owner: ${ownerRobotId})`);
+        
         targetNode.knownTasks = targetNode.knownTasks || {};
+        const wasAlreadyClaimed = targetNode.knownTasks[taskId]?.claimedBy === ownerRobotId && targetNode.knownTasks[taskId]?.allocationState === 'CLAIMED';
+
         if (targetNode.knownTasks[taskId]) {
           targetNode.knownTasks[taskId].claimedBy = ownerRobotId;
           targetNode.knownTasks[taskId].status = 'CLAIMED';
           targetNode.knownTasks[taskId].allocationState = 'CLAIMED';
         }
 
-        // Synchronize global taskStore & warehouseStore ownership
-        try {
-          const useTaskStore = require('../../store/taskStore').useTaskStore.getState;
-          const useWarehouseStore = require('../../store/warehouseStore').useWarehouseStore.getState;
-          
-          const taskStore = useTaskStore();
-          console.log(`[P2P] assignment result triggering for ${taskId}`);
-          taskStore.receiveAssignmentResult(taskId, ownerRobotId);
+        // Synchronize global taskStore & warehouseStore ownership ONLY if not already processed idempotently
+        if (!wasAlreadyClaimed) {
+          try {
+            const useTaskStore = require('../../store/taskStore').useTaskStore.getState;
+            const useWarehouseStore = require('../../store/warehouseStore').useWarehouseStore.getState;
+            
+            const taskStore = useTaskStore();
+            console.log(`[P2P] assignment result triggering for ${taskId}`);
+            taskStore.receiveAssignmentResult(taskId, ownerRobotId);
 
-          const warehouseStore = useWarehouseStore();
-          const task = taskStore.getTask(taskId);
-          if (task && task.handoverAudit?.originalRobotId) {
-            const executeHandoverAssignment = require('../recovery/TaskHandoverManager').executeHandoverAssignment;
-            executeHandoverAssignment(
-              ownerRobotId,
-              task,
-              task.handoverAudit.handoverPhase || 'TO_PICKUP',
-              task.handoverAudit.originalRobotId,
-              task.handoverAudit.handoverReason
-            );
-          } else if (task && task.recoveryAudit?.failedRobotId) {
-            const executeRecoveryAssignment = require('../recovery/FailureRecoveryManager').executeRecoveryAssignment;
-            executeRecoveryAssignment(
-              ownerRobotId,
-              task,
-              task.recoveryAudit.recoveryPhase || 'TO_PICKUP',
-              message.payload?.lastKnownPosition || { col: 5, row: 5 }
-            );
-          } else if (task) {
-            warehouseStore.assignTaskToRobot(ownerRobotId, task);
-          }
-        } catch (e) {}
+            const warehouseStore = useWarehouseStore();
+            const task = taskStore.getTask(taskId);
+            if (task && task.handoverAudit?.originalRobotId) {
+              const executeHandoverAssignment = require('../recovery/TaskHandoverManager').executeHandoverAssignment;
+              executeHandoverAssignment(
+                ownerRobotId,
+                task,
+                task.handoverAudit.handoverPhase || 'TO_PICKUP',
+                task.handoverAudit.originalRobotId,
+                task.handoverAudit.handoverReason
+              );
+            } else if (task && task.recoveryAudit?.failedRobotId) {
+              const executeRecoveryAssignment = require('../recovery/FailureRecoveryManager').executeRecoveryAssignment;
+              executeRecoveryAssignment(
+                ownerRobotId,
+                task,
+                task.recoveryAudit.recoveryPhase || 'TO_PICKUP',
+                message.payload?.lastKnownPosition || { col: 5, row: 5 }
+              );
+            } else if (task) {
+              warehouseStore.assignTaskToRobot(ownerRobotId, task);
+            }
+          } catch (e) {}
+        }
       }
 
     };
