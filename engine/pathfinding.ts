@@ -9,16 +9,25 @@ export interface PathfindingState {
   pallets?: { row: number; col: number; width: number; height: number }[];
 }
 
-export function isWalkable(state: PathfindingState, row: number, col: number): boolean {
+export function isWalkable(
+  state: PathfindingState,
+  row: number,
+  col: number,
+  avoidCells?: Set<string>
+): boolean {
   if (row < 0 || row >= state.gridRows || col < 0 || col >= state.gridCols) return false;
-  
+
+  if (avoidCells && avoidCells.has(`${row},${col}`)) {
+    return false;
+  }
+
   // Check obstacles
   for (const obs of state.obstacles) {
     if (row >= obs.row && row < obs.row + obs.height && col >= obs.col && col < obs.col + obs.width) {
       return false;
     }
   }
-  
+
   // Check shelves
   for (const shelf of state.shelves) {
     if (row >= shelf.row && row < shelf.row + shelf.height && col >= shelf.col && col < shelf.col + shelf.width) {
@@ -33,39 +42,95 @@ export function isWalkable(state: PathfindingState, row: number, col: number): b
       }
     }
   }
-  
+
   return true;
 }
 
-// Basic A* pathfinding algorithm on the grid
-export function findPathAStar(state: PathfindingState, startRow: number, startCol: number, endRow: number, endCol: number): {row: number, col: number}[] {
-  // If start or end is not walkable (e.g. inside a shelf), return empty path or handle differently
-  // For now, if the destination itself is blocked, we might want to navigate to the nearest adjacent cell.
-  // But we'll keep it simple: just fail if end is strictly blocked.
-  if (!isWalkable(state, startRow, startCol) || !isWalkable(state, endRow, endCol)) {
-    return [];
+/**
+ * Finds the nearest walkable cell adjacent to the target (for picking up/dropping next to shelves or boundaries)
+ */
+export function findNearestWalkableCell(
+  state: PathfindingState,
+  targetRow: number,
+  targetCol: number,
+  avoidCells?: Set<string>
+): { row: number; col: number } | null {
+  if (isWalkable(state, targetRow, targetCol, avoidCells)) {
+    return { row: targetRow, col: targetCol };
+  }
+
+  // Search in expanding concentric rings up to radius 3
+  for (let radius = 1; radius <= 3; radius++) {
+    const candidates: { row: number; col: number }[] = [];
+    for (let dr = -radius; dr <= radius; dr++) {
+      for (let dc = -radius; dc <= radius; dc++) {
+        if (Math.abs(dr) + Math.abs(dc) === radius) {
+          const r = targetRow + dr;
+          const c = targetCol + dc;
+          if (isWalkable(state, r, c, avoidCells)) {
+            candidates.push({ row: r, col: c });
+          }
+        }
+      }
+    }
+    if (candidates.length > 0) {
+      return candidates[0];
+    }
+  }
+
+  return null;
+}
+
+// A* pathfinding algorithm on the grid with optional dynamic avoidance
+export function findPathAStar(
+  state: PathfindingState,
+  startRow: number,
+  startCol: number,
+  endRow: number,
+  endCol: number,
+  avoidCells?: Set<string>
+): { row: number; col: number }[] {
+  let actualStart = { row: startRow, col: startCol };
+  if (!isWalkable(state, startRow, startCol)) {
+    const fallbackStart = findNearestWalkableCell(state, startRow, startCol);
+    if (fallbackStart) {
+      actualStart = fallbackStart;
+    } else {
+      return [];
+    }
+  }
+
+  let actualEnd = { row: endRow, col: endCol };
+  if (!isWalkable(state, endRow, endCol, avoidCells)) {
+    const fallbackEnd = findNearestWalkableCell(state, endRow, endCol, avoidCells);
+    if (fallbackEnd) {
+      actualEnd = fallbackEnd;
+    } else if (!isWalkable(state, endRow, endCol)) {
+      const fallbackEndNoAvoid = findNearestWalkableCell(state, endRow, endCol);
+      if (fallbackEndNoAvoid) actualEnd = fallbackEndNoAvoid;
+      else return [];
+    }
   }
 
   const openSet = new Set<string>();
   const closedSet = new Set<string>();
-  
-  const startKey = `${startRow},${startCol}`;
-  const endKey = `${endRow},${endCol}`;
-  
+
+  const startKey = `${actualStart.row},${actualStart.col}`;
+  const endKey = `${actualEnd.row},${actualEnd.col}`;
+
   openSet.add(startKey);
-  
+
   const cameFrom = new Map<string, string>();
   const gScore = new Map<string, number>();
   const fScore = new Map<string, number>();
-  
+
   gScore.set(startKey, 0);
-  fScore.set(startKey, heuristic(startRow, startCol, endRow, endCol));
-  
+  fScore.set(startKey, heuristic(actualStart.row, actualStart.col, actualEnd.row, actualEnd.col));
+
   while (openSet.size > 0) {
-    // Find node with lowest fScore
     let currentKey = '';
     let lowestF = Infinity;
-    
+
     for (const key of openSet) {
       const score = fScore.get(key) ?? Infinity;
       if (score < lowestF) {
@@ -73,44 +138,89 @@ export function findPathAStar(state: PathfindingState, startRow: number, startCo
         currentKey = key;
       }
     }
-    
+
     if (currentKey === endKey) {
       return reconstructPath(cameFrom, currentKey);
     }
-    
+
     openSet.delete(currentKey);
     closedSet.add(currentKey);
-    
+
     const [curRow, curCol] = currentKey.split(',').map(Number);
     const neighbors = getNeighbors(curRow, curCol);
-    
+
     for (const neighbor of neighbors) {
       const neighborKey = `${neighbor.row},${neighbor.col}`;
-      
-      if (closedSet.has(neighborKey) || !isWalkable(state, neighbor.row, neighbor.col)) {
+
+      if (closedSet.has(neighborKey) || !isWalkable(state, neighbor.row, neighbor.col, avoidCells)) {
         continue;
       }
-      
+
       const tentativeG = (gScore.get(currentKey) ?? Infinity) + 1;
-      
+
       if (!openSet.has(neighborKey)) {
         openSet.add(neighborKey);
       } else if (tentativeG >= (gScore.get(neighborKey) ?? Infinity)) {
         continue;
       }
-      
+
       cameFrom.set(neighborKey, currentKey);
       gScore.set(neighborKey, tentativeG);
-      fScore.set(neighborKey, tentativeG + heuristic(neighbor.row, neighbor.col, endRow, endCol));
+      fScore.set(neighborKey, tentativeG + heuristic(neighbor.row, neighbor.col, actualEnd.row, actualEnd.col));
     }
   }
-  
-  // No path found
+
+  // If no path found with avoidCells, retry without avoidCells as fallback
+  if (avoidCells && avoidCells.size > 0) {
+    return findPathAStar(state, startRow, startCol, endRow, endCol);
+  }
+
   return [];
 }
 
+/**
+ * Preemptive Deconflicted Pathfinding:
+ * Calculates an alternate detour path avoiding another robot's projected trajectory corridor.
+ */
+export function findDeconflictedPathAStar(
+  state: PathfindingState,
+  startRow: number,
+  startCol: number,
+  endRow: number,
+  endCol: number,
+  conflictingTrajectory: { row: number; col: number }[],
+  currentRobotPositions?: { row: number; col: number }[]
+): { row: number; col: number }[] {
+  const avoidSet = new Set<string>();
+
+  // Mark all cells in the conflicting trajectory as avoided
+  conflictingTrajectory.forEach((p) => {
+    avoidSet.add(`${p.row},${p.col}`);
+  });
+
+  // Also avoid other active robots' current stationary positions
+  if (currentRobotPositions) {
+    currentRobotPositions.forEach((pos) => {
+      if (pos.row !== startRow || pos.col !== startCol) {
+        avoidSet.add(`${pos.row},${pos.col}`);
+      }
+    });
+  }
+
+  // Never avoid the destination cell or the immediate start cell
+  avoidSet.delete(`${startRow},${startCol}`);
+  avoidSet.delete(`${endRow},${endCol}`);
+
+  const deconflictedPath = findPathAStar(state, startRow, startCol, endRow, endCol, avoidSet);
+  if (deconflictedPath.length > 0) {
+    return deconflictedPath;
+  }
+
+  // Fallback to standard path if detour is completely blocked
+  return findPathAStar(state, startRow, startCol, endRow, endCol);
+}
+
 function heuristic(r1: number, c1: number, r2: number, c2: number): number {
-  // Manhattan distance
   return Math.abs(r1 - r2) + Math.abs(c1 - c2);
 }
 
@@ -123,16 +233,15 @@ function getNeighbors(row: number, col: number) {
   ];
 }
 
-function reconstructPath(cameFrom: Map<string, string>, currentKey: string): {row: number, col: number}[] {
-  const path = [];
+function reconstructPath(cameFrom: Map<string, string>, currentKey: string): { row: number; col: number }[] {
+  const path: { row: number; col: number }[] = [];
   let current = currentKey;
-  
+
   while (cameFrom.has(current)) {
     const [row, col] = current.split(',').map(Number);
     path.unshift({ row, col });
     current = cameFrom.get(current)!;
   }
-  
-  // Note: we don't include the start cell in the path returned to the robot
+
   return path;
 }

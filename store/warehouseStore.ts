@@ -20,15 +20,14 @@ import {
   DEFAULT_TRANSFORM,
 } from '../types/warehouse';
 import { demoWarehouse, defaultWalls } from '../data/demoWarehouse';
-import { findPathAStar } from '../engine/pathfinding';
+import { findPathAStar, findDeconflictedPathAStar, isWalkable } from '../engine/pathfinding';
 import { useTaskStore } from './taskStore';
 import { snapAndClamp } from '../lib/coords';
 import { clampAllToGrid, cloneLayout, robotsForPlay, validateLayout, LayoutValidationIssue } from '../engine/validateLayout';
 
 import { useP2PStore } from './p2pStore';
-import { resolveTickCollisions } from '../engine/coordination/CollisionCoordinator';
+import { resolveTickCollisions, preemptivelyDeconflictTrajectories } from '../engine/coordination/CollisionCoordinator';
 import { resolveLocationCoordinates } from '../engine/evaluation/TaskEvaluator';
-import { isWalkable } from '../engine/pathfinding';
 
 export type Task = { id: string, targetRow: number, targetCol: number, assignedTo: string | null };
 
@@ -496,43 +495,49 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
     const pickupCoord = resolveLocationCoordinates(task.pickup_point, state.pois, state.shelves);
     const dropCoord = resolveLocationCoordinates(task.drop_point, state.pois, state.shelves);
     
-    return {
-      robots: state.robots.map((r) => {
-        if (r.id === robotId) {
-          let newPath = r.path;
-          let newState = r.state;
-          if (pickupCoord && dropCoord) {
-            newPath = findPathAStar(state, r.row, r.col, pickupCoord.row, pickupCoord.col);
-            console.log(`[WAREHOUSE] route generated for ${robotId} to ${task.pickup_point}: path length ${newPath.length}`);
-            if (newPath.length > 0) {
-              newState = 'MOVING';
-              console.log(`[WAREHOUSE] robot state changed to MOVING for ${robotId}`);
-            } else {
-              console.error(`[P2P ERROR] Robot ${robotId} claimed task ${task.task_id} but A* found NO PATH to pickup ${task.pickup_point}`);
-              setTimeout(() => {
-                useTaskStore.getState().failTask(task.task_id, 'No path to pickup');
-                useP2PStore.getState().sendDirectMessage(r.id, 'SYSTEM', 'TEXT', { body: `Cannot find path to pickup ${pickupCoord.label}` });
-              }, 0);
-            }
+    const updatedRobots = state.robots.map((r) => {
+      if (r.id === robotId) {
+        let newPath = r.path;
+        let newState = r.state;
+        if (pickupCoord && dropCoord) {
+          newPath = findPathAStar(state, r.row, r.col, pickupCoord.row, pickupCoord.col);
+          console.log(`[WAREHOUSE] route generated for ${robotId} to ${task.pickup_point}: path length ${newPath.length}`);
+          if (newPath.length > 0) {
+            newState = 'MOVING';
+            console.log(`[WAREHOUSE] robot state changed to MOVING for ${robotId}`);
           } else {
-            console.error(`[P2P ERROR] Robot ${robotId} claimed task ${task.task_id} but coordinates could not be resolved! Pickup: ${!!pickupCoord}, Drop: ${!!dropCoord}`);
+            console.error(`[P2P ERROR] Robot ${robotId} claimed task ${task.task_id} but A* found NO PATH to pickup ${task.pickup_point}`);
             setTimeout(() => {
-              useTaskStore.getState().failTask(task.task_id, 'Invalid pickup or drop location coordinates');
+              useTaskStore.getState().failTask(task.task_id, 'No path to pickup');
+              useP2PStore.getState().sendDirectMessage(r.id, 'SYSTEM', 'TEXT', { body: `Cannot find path to pickup ${pickupCoord.label}` });
             }, 0);
           }
-          return {
-            ...r,
-            currentTask: pickupCoord ? `Pickup at ${pickupCoord.label}` : 'Task Assigned',
-            currentTaskId: task.task_id,
-            taskPhase: 'TO_PICKUP',
-            pickupPoint: pickupCoord,
-            dropPoint: dropCoord,
-            path: newPath,
-            state: newState,
-          };
+        } else {
+          console.error(`[P2P ERROR] Robot ${robotId} claimed task ${task.task_id} but coordinates could not be resolved! Pickup: ${!!pickupCoord}, Drop: ${!!dropCoord}`);
+          setTimeout(() => {
+            useTaskStore.getState().failTask(task.task_id, 'Invalid pickup or drop location coordinates');
+          }, 0);
         }
-        return r;
-      }),
+        return {
+          ...r,
+          currentTask: pickupCoord ? `Pickup at ${pickupCoord.label}` : 'Task Assigned',
+          currentTaskId: task.task_id,
+          taskPhase: 'TO_PICKUP' as const,
+          pickupPoint: pickupCoord,
+          dropPoint: dropCoord,
+          path: newPath,
+          state: newState,
+        };
+      }
+      return r;
+    });
+
+    // Proactively deconflict the newly assigned route against active peers
+    const taskStoreTasks = useTaskStore.getState().tasks;
+    const deconfliction = preemptivelyDeconflictTrajectories(updatedRobots, taskStoreTasks, state);
+
+    return {
+      robots: deconfliction.updatedRobots,
     };
   }),
   removeAnnouncedTaskId: (taskId: string) => {
@@ -540,11 +545,17 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
     announcedTaskTimestamps.delete(taskId);
   },
 
-  removeRobot: (id) => set((state) => ({
-    robots: state.robots.filter((r) => r.id !== id),
-    selectedItemId: state.selectedItemId === id ? null : state.selectedItemId,
-    selectedItemType: state.selectedItemId === id ? null : state.selectedItemType,
-  })),
+  removeRobot: (id) => {
+    try {
+      useP2PStore.getState().network.unregisterNode(id);
+      useP2PStore.getState().processHeartbeats();
+    } catch (e) {}
+    set((state) => ({
+      robots: state.robots.filter((r) => r.id !== id),
+      selectedItemId: state.selectedItemId === id ? null : state.selectedItemId,
+      selectedItemType: state.selectedItemId === id ? null : state.selectedItemType,
+    }));
+  },
 
   addPoi: (poi) => set((state) => {
     const nextId = nextPrefixedId('POI', state.pois.map((p) => p.id));
@@ -920,8 +931,30 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
       return null;
     };
 
-    // Evaluate tick movement intents using deterministic CollisionCoordinator
-    const collisionResolution = resolveTickCollisions(state.robots, [...state.obstacles, ...(state.shelves || []), ...(state.pallets || [])] as any, taskStore.tasks, blockedTicksMap);
+    // 1. Proactive Ahead-of-Time Trajectory Deconfliction
+    const deconfliction = preemptivelyDeconflictTrajectories(state.robots, taskStore.tasks, state);
+    const movingRobots = deconfliction.updatedRobots;
+
+    deconfliction.deconflictEvents.forEach((evt) => {
+      p2pStore.sendDirectMessage(evt.yieldingRobotId, evt.priorityRobotId, 'PATH_DECONFLICT', {
+        yieldingRobotId: evt.yieldingRobotId,
+        priorityRobotId: evt.priorityRobotId,
+        conflictLocation: evt.conflictLocation,
+        conflictTick: evt.conflictTick,
+        conflictType: evt.conflictType,
+        body: evt.body,
+      });
+      newLinks.push({ from: evt.yieldingRobotId, to: evt.priorityRobotId, expires: now + 3000 });
+    });
+
+    // 2. Evaluate immediate 1-tick movement intents using deterministic CollisionCoordinator
+    const collisionResolution = resolveTickCollisions(
+      movingRobots,
+      [...state.obstacles, ...(state.shelves || []), ...(state.pallets || [])] as any,
+      taskStore.tasks,
+      blockedTicksMap,
+      state
+    );
 
     // Process yielding events for P2P messaging (throttled)
     collisionResolution.yieldingEvents.forEach((evt) => {
@@ -935,11 +968,42 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
       }
     });
 
-    const updatedRobots = state.robots.map(robot => {
+    const updatedRobots = movingRobots.map((robot) => {
       if ((robot.state === 'MOVING' || robot.state === 'WAITING_FOR_PATH_CLEARANCE') && robot.path.length > 0) {
         // Check if robot is blocked by collision coordinator
         if (collisionResolution.blockedRobotIds.has(robot.id)) {
-          const blockInfo = collisionResolution.blockedRobotIds.get(robot.id);
+          const blockedTicks = blockedTicksMap.get(robot.id) || 0;
+          // Reactive dynamic replanning for AMRs blocked >= 2 ticks
+          if (blockedTicks >= 2 && robot.path.length > 0) {
+            const targetCoord =
+              robot.taskPhase === 'TO_PICKUP'
+                ? robot.pickupPoint
+                : robot.taskPhase === 'TO_DROP'
+                ? robot.dropPoint
+                : robot.path[robot.path.length - 1];
+            if (targetCoord) {
+              const otherOccupied = movingRobots
+                .filter((o) => o.id !== robot.id)
+                .map((o) => ({ row: o.row, col: o.col }));
+              const rerouted = findDeconflictedPathAStar(
+                state,
+                robot.row,
+                robot.col,
+                targetCoord.row,
+                targetCoord.col,
+                [],
+                otherOccupied
+              );
+              if (rerouted.length > 0 && (rerouted[0].row !== robot.path[0].row || rerouted[0].col !== robot.path[0].col)) {
+                blockedTicksMap.set(robot.id, 0);
+                return {
+                  ...robot,
+                  path: rerouted,
+                  state: 'MOVING' as const,
+                };
+              }
+            }
+          }
           return {
             ...robot,
             state: 'WAITING_FOR_PATH_CLEARANCE' as const,

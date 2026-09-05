@@ -22,7 +22,33 @@ export type P2PMessageType =
   | 'ROBOT_FAILURE'
   | 'TASK_RECOVERY_ANNOUNCEMENT'
   // Phase 7 Dynamic Reallocation Message Types
-  | 'TASK_HANDOVER_REQUEST';
+  | 'TASK_HANDOVER_REQUEST'
+  // Phase 9 Proactive Trajectory Coordination & Deconfliction
+  | 'PATH_INTENT'
+  | 'PATH_DECONFLICT';
+
+export interface TrajectoryPoint {
+  tick: number;
+  row: number;
+  col: number;
+}
+
+export interface PathIntentPayload {
+  robotId: string;
+  priorityScore: number;
+  currentTaskId?: string | null;
+  trajectory: TrajectoryPoint[];
+}
+
+export interface PathDeconflictPayload {
+  yieldingRobotId: string;
+  priorityRobotId: string;
+  conflictLocation: { row: number; col: number };
+  conflictTick: number;
+  conflictType: 'VERTEX_COLLISION' | 'HEAD_ON_SWAP';
+  reroutedPathLength: number;
+  body: string;
+}
 
 export type PeerNodeStatus = 'ONLINE' | 'OFFLINE';
 

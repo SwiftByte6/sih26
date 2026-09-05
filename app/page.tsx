@@ -51,11 +51,8 @@ export default function SimulatorPage() {
         )}
 
         {activeView === 'ROBOTS' && (
-          <div className="absolute inset-0 z-30 bg-workspace flex overflow-hidden">
-            <div className="flex-1 flex flex-col overflow-hidden">
-              <RobotFleetSection />
-            </div>
-            <InspectorPanel />
+          <div className="absolute inset-0 z-30 bg-workspace flex flex-col overflow-hidden">
+            <RobotFleetSection />
           </div>
         )}
 
