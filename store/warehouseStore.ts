@@ -945,36 +945,24 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
 
       const prev = lastRobotTelemetry.get(robot.id);
       if (!prev) {
-        // Initial snapshot registration (broadcast initial status once)
+        // Initial snapshot registration (silent telemetry sync)
         lastRobotTelemetry.set(robot.id, currentSnap);
-        p2pStore.broadcastMessage(robot.id, 'STATUS_UPDATE', {
-          robotId: robot.id,
-          position: { col: robot.col, row: robot.row },
-          status: robot.state,
-          battery: currentSnap.battery,
-          task: taskLabel,
-          speed: robot.speed,
-          body: `Initial Status: ${robot.state} | Pos (${robot.col},${robot.row}) | Batt: ${currentSnap.battery}%${taskLabel ? ` | Task: ${taskLabel}` : ''}`,
-        });
         return;
       }
 
-      // Check meaningful change conditions:
+      // Check meaningful state / operational change conditions:
       const stateChanged = prev.state !== currentSnap.state;
       const taskChanged = prev.task !== currentSnap.task;
       const onlineChanged = prev.isOnline !== currentSnap.isOnline;
-      const posDist = Math.abs(currentSnap.col - prev.col) + Math.abs(currentSnap.row - prev.row);
-      const posChangedMeaningfully = posDist >= 5;
-      const battChangedMeaningfully = Math.abs(currentSnap.battery - prev.battery) >= 5;
+      const battDroppedLow = prev.battery > 25 && currentSnap.battery <= 25;
 
-      if (stateChanged || taskChanged || onlineChanged || posChangedMeaningfully || battChangedMeaningfully) {
+      if (stateChanged || taskChanged || onlineChanged || battDroppedLow) {
         lastRobotTelemetry.set(robot.id, currentSnap);
 
         const changes: string[] = [];
-        if (stateChanged) changes.push(`State: ${prev.state} ΓåÆ ${currentSnap.state}`);
-        if (taskChanged) changes.push(`Task: ${prev.task || 'None'} ΓåÆ ${currentSnap.task || 'None'}`);
-        if (battChangedMeaningfully) changes.push(`Batt: ${prev.battery}% ΓåÆ ${currentSnap.battery}%`);
-        if (posChangedMeaningfully) changes.push(`Moved to (${currentSnap.col},${currentSnap.row})`);
+        if (stateChanged) changes.push(`State: ${prev.state} → ${currentSnap.state}`);
+        if (taskChanged) changes.push(`Task: ${prev.task || 'None'} → ${currentSnap.task || 'None'}`);
+        if (battDroppedLow) changes.push(`Low Battery Warning: ${currentSnap.battery}%`);
 
         p2pStore.broadcastMessage(robot.id, 'STATUS_UPDATE', {
           robotId: robot.id,
@@ -983,7 +971,7 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
           battery: currentSnap.battery,
           task: taskLabel,
           speed: robot.speed,
-          body: `STATUS_UPDATE [${changes.join(' | ')}] Pos (${robot.col},${robot.row}) | Batt: ${currentSnap.battery}%`,
+          body: `STATUS_UPDATE: ${robot.id} [${changes.join(' | ')}]`,
         });
       }
     });
@@ -1108,6 +1096,12 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
     const movingRobots = deconfliction.updatedRobots;
 
     deconfliction.deconflictEvents.forEach((evt) => {
+      p2pStore.sendDirectMessage(evt.priorityRobotId, evt.yieldingRobotId, 'CONFLICT_DETECTED', {
+        conflictLocation: evt.conflictLocation,
+        conflictTick: evt.conflictTick,
+        conflictType: evt.conflictType,
+        body: `CONFLICT_DETECTED: Predicted conflict at (${evt.conflictLocation.col},${evt.conflictLocation.row}) in t+${evt.conflictTick}`,
+      });
       p2pStore.sendDirectMessage(evt.yieldingRobotId, evt.priorityRobotId, 'PATH_DECONFLICT', {
         yieldingRobotId: evt.yieldingRobotId,
         priorityRobotId: evt.priorityRobotId,
@@ -1161,8 +1155,11 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
 
           // Found a clear sidestep cell!
           sidesteppedRobotPositions.set(idleRobot.id, { col: candCol, row: candRow });
-          p2pStore.sendDirectMessage(idleRobot.id, req.requestingRobotId, 'TEXT', {
-            body: `Clearing path: AMR ${idleRobot.id} sidestepped to (${candCol},${candRow}) for ${req.requestingRobotId}`,
+          p2pStore.sendDirectMessage(req.requestingRobotId, idleRobot.id, 'YIELD_REQUEST', {
+            body: `YIELD_REQUEST: Requesting clear corridor at (${req.blockedCell.col},${req.blockedCell.row})`,
+          });
+          p2pStore.sendDirectMessage(idleRobot.id, req.requestingRobotId, 'YIELD_RESPONSE', {
+            body: `YIELD_RESPONSE: Sidestepped to (${candCol},${candRow}) - path cleared for ${req.requestingRobotId}`,
           });
           newLinks.push({ from: idleRobot.id, to: req.requestingRobotId, expires: now + 2500 });
           blockedTicksMap.set(req.requestingRobotId, 0);
@@ -1176,8 +1173,11 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
       const conflictKey = `${evt.yieldingRobotId}-${evt.priorityRobotId}`;
       if (!lastConflictTime.has(conflictKey) || (now - (lastConflictTime.get(conflictKey) || 0) > 3000)) {
         lastConflictTime.set(conflictKey, now);
-        p2pStore.sendDirectMessage(evt.yieldingRobotId, evt.priorityRobotId, 'TEXT', {
-          body: `YIELDING to ${evt.priorityRobotId}: ${evt.reason}`,
+        p2pStore.sendDirectMessage(evt.yieldingRobotId, evt.priorityRobotId, 'YIELD_REQUEST', {
+          body: `YIELD_REQUEST: Yielding to ${evt.priorityRobotId}: ${evt.reason}`,
+        });
+        p2pStore.sendDirectMessage(evt.priorityRobotId, evt.yieldingRobotId, 'YIELD_RESPONSE', {
+          body: `YIELD_RESPONSE: Acknowledged yield from ${evt.yieldingRobotId}`,
         });
         newLinks.push({ from: evt.yieldingRobotId, to: evt.priorityRobotId, expires: now + 2500 });
       }
@@ -1204,7 +1204,7 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
             const dist = Math.abs(robot.col - robot.pickupPoint.col) + Math.abs(robot.row - robot.pickupPoint.row);
             if (dist <= 1) {
               taskStore.startTask(robot.currentTaskId);
-              p2pStore.broadcastMessage(robot.id, 'TEXT', { body: `Picked up item at ${robot.pickupPoint.label} (adjacent dock). Heading to ${robot.dropPoint.label}` });
+              p2pStore.sendDirectMessage(robot.id, 'ALL', 'TASK_COMPLETED', { taskId: robot.currentTaskId, body: `Picked up item at ${robot.pickupPoint.label} (adjacent dock). Heading to ${robot.dropPoint.label}` });
               const dropPath = findPathAStar(state, robot.row, robot.col, robot.dropPoint.row, robot.dropPoint.col);
               blockedTicksMap.set(robot.id, 0);
               return {
@@ -1218,7 +1218,7 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
             const dist = Math.abs(robot.col - robot.dropPoint.col) + Math.abs(robot.row - robot.dropPoint.row);
             if (dist <= 1) {
               taskStore.completeTask(robot.currentTaskId);
-              p2pStore.broadcastMessage(robot.id, 'TEXT', { body: `Task [${robot.currentTaskId}] completed at ${robot.dropPoint.label}.` });
+              p2pStore.sendDirectMessage(robot.id, 'TASK_DISPATCH', 'TASK_COMPLETED', { taskId: robot.currentTaskId, body: `TASK_COMPLETED: Task [${robot.currentTaskId}] completed at ${robot.dropPoint.label}.` });
               newLinks.push({ from: robot.id, to: 'ALL', expires: now + 2000 });
               blockedTicksMap.set(robot.id, 0);
               return {

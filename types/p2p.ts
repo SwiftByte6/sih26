@@ -14,6 +14,7 @@ export type P2PMessageType =
   | 'TASK_ANNOUNCEMENT'
   | 'TASK_BID'
   | 'TASK_WINNER_PROPOSAL'
+  | 'CONSENSUS'
   | 'TASK_CLAIMED'
   | 'TASK_RELEASED'
   | 'TASK_COMPLETED'
@@ -25,7 +26,10 @@ export type P2PMessageType =
   | 'TASK_HANDOVER_REQUEST'
   // Phase 9 Proactive Trajectory Coordination & Deconfliction
   | 'PATH_INTENT'
-  | 'PATH_DECONFLICT';
+  | 'PATH_DECONFLICT'
+  | 'CONFLICT_DETECTED'
+  | 'YIELD_REQUEST'
+  | 'YIELD_RESPONSE';
 
 export interface TrajectoryPoint {
   tick: number;
@@ -101,7 +105,8 @@ export interface LocalTaskKnowledge {
   evaluation?: TaskEvaluationResult;
   myBidSent?: boolean;
   myProposalSent?: boolean;
-  claimedBy?: string;
+  myConsensusSent?: boolean;
+  claimedBy?: string | null;
   status?: 'PENDING' | 'PROPOSED' | 'CLAIMED';
   peerBids: Record<string, PeerBidEntry>; // Keyed by peer's robotId (e.g. "AMR-02")
   peerProposals?: Record<string, WinnerProposalEntry>; // Keyed by peer's robotId (e.g. "AMR-02")

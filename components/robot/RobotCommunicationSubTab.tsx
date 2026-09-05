@@ -3,28 +3,123 @@
 import React, { useState } from 'react';
 import { useWarehouseStore } from '../../store/warehouseStore';
 import { useP2PStore } from '../../store/p2pStore';
-import { Bot, Wifi, WifiOff, BatteryCharging, Copy, Check } from 'lucide-react';
+import { Bot, Wifi, WifiOff, BatteryCharging, Copy, Check, ArrowRight, Radio } from 'lucide-react';
+import { P2PMessage } from '../../types/p2p';
 
 export const RobotCommunicationSubTab: React.FC = () => {
   const { robots, selectedItemId, setSelectedItem } = useWarehouseStore();
   const p2pNodes = useP2PStore((state) => state.nodes);
   const [copiedRobotId, setCopiedRobotId] = useState<string | null>(null);
 
-  const copyDirectLog = (robotId: string, historyMsgs: any[]) => {
+  const getMsgTypeBadgeClass = (type: string) => {
+    switch (type) {
+      case 'TASK_ANNOUNCEMENT':
+        return 'bg-amber-500/20 text-amber-300 border-amber-500/40';
+      case 'TASK_BID':
+        return 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40';
+      case 'TASK_WINNER_PROPOSAL':
+        return 'bg-purple-500/20 text-purple-300 border-purple-500/40';
+      case 'CONSENSUS':
+        return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
+      case 'TASK_CLAIMED':
+        return 'bg-emerald-600/30 text-emerald-200 border-emerald-500/60 font-bold';
+      case 'TASK_COMPLETED':
+        return 'bg-teal-500/20 text-teal-300 border-teal-500/40';
+      case 'CONFLICT_DETECTED':
+        return 'bg-rose-500/20 text-rose-300 border-rose-500/40';
+      case 'YIELD_REQUEST':
+        return 'bg-orange-500/20 text-orange-300 border-orange-500/40';
+      case 'YIELD_RESPONSE':
+        return 'bg-sky-500/20 text-sky-300 border-sky-500/40';
+      case 'PATH_DECONFLICT':
+        return 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40';
+      case 'EMERGENCY':
+      case 'ROBOT_FAILURE':
+        return 'bg-red-500/30 text-red-200 border-red-500/60 font-bold';
+      default:
+        return 'bg-slate-700/60 text-slate-300 border-slate-600/50';
+    }
+  };
+
+  const formatMessageSummary = (msg: P2PMessage) => {
+    const payload = msg.payload || {};
+    const type = msg.type;
+
+    if (type === 'TASK_ANNOUNCEMENT') {
+      const taskId = payload.task?.task_id || payload.taskId || 'Task';
+      const priority = payload.task?.priority || payload.priority || 'NORMAL';
+      const pickup = payload.task?.pickup_point || '';
+      const drop = payload.task?.drop_point || '';
+      const routeStr = pickup && drop ? ` | ${pickup} → ${drop}` : '';
+      return `${taskId} | ${priority}${routeStr}`;
+    }
+
+    if (type === 'TASK_BID') {
+      const taskId = payload.taskId || 'Task';
+      if (payload.eligible === false) {
+        return `${taskId} | Score: 0 (Ineligible)`;
+      }
+      const score = payload.suitabilityScore !== undefined ? payload.suitabilityScore : '?';
+      const dist = payload.distanceToPickup ? ` | Dist: ${payload.distanceToPickup}m` : '';
+      return `${taskId} | Score: ${score}${dist}`;
+    }
+
+    if (type === 'TASK_WINNER_PROPOSAL') {
+      const taskId = payload.taskId || 'Task';
+      const winner = payload.proposedWinnerId || '?';
+      return `${taskId} | Proposed Winner: ${winner}`;
+    }
+
+    if (type === 'CONSENSUS') {
+      const taskId = payload.taskId || 'Task';
+      return `${taskId} | ACCEPT`;
+    }
+
+    if (type === 'TASK_CLAIMED') {
+      const taskId = payload.taskId || 'Task';
+      const owner = payload.ownerRobotId || msg.senderId;
+      return `${taskId} | Claimed by ${owner}`;
+    }
+
+    if (type === 'TASK_COMPLETED') {
+      const taskId = payload.taskId || 'Task';
+      const loc = payload.dropPoint || '';
+      return `Task [${taskId}] completed${loc ? ` at ${loc}` : ''}`;
+    }
+
+    if (type === 'CONFLICT_DETECTED') {
+      const loc = payload.conflictLocation ? `Cell (${payload.conflictLocation.col},${payload.conflictLocation.row})` : '';
+      const tick = payload.conflictTick ? ` in t+${payload.conflictTick}` : '';
+      return `${loc || 'Trajectory conflict'}${tick}`;
+    }
+
+    if (type === 'YIELD_REQUEST') {
+      return payload.body || 'Requesting path clearance';
+    }
+
+    if (type === 'YIELD_RESPONSE') {
+      return payload.body || 'Yield acknowledged / path cleared';
+    }
+
+    if (type === 'PATH_DECONFLICT') {
+      const yielder = payload.yieldingRobotId || msg.senderId;
+      const priority = payload.priorityRobotId || msg.receiverId;
+      return `${yielder} rerouted ahead-of-time around ${priority}`;
+    }
+
+    return payload.body || payload.status || (typeof payload === 'string' ? payload : JSON.stringify(payload));
+  };
+
+  const copyDirectLog = (robotId: string, historyMsgs: P2PMessage[]) => {
     const lines = [
+      `========================================`,
       `${robotId} P2P COMMUNICATION LOG`,
-      '--------------------------------',
+      `========================================`,
     ];
     historyMsgs.forEach((msg) => {
       const timeStr = new Date(msg.timestamp).toLocaleTimeString([], { hour12: false });
-      const isOutgoing = msg.senderId === robotId;
-      const dirSymbol = isOutgoing ? 'SENT →' : 'RECEIVED ←';
-      const targetStr = msg.receiverId === 'ALL' ? 'ALL' : isOutgoing ? msg.receiverId : msg.senderId;
-      const payloadObj = msg.payload || {};
-      const taskIdStr = payloadObj.taskId ? ` | ${payloadObj.taskId}` : '';
-      const scoreStr = payloadObj.suitabilityScore !== undefined ? ` | Score: ${payloadObj.suitabilityScore}` : '';
-      const winnerStr = payloadObj.proposedWinnerId ? ` | Proposed: ${payloadObj.proposedWinnerId}` : payloadObj.ownerRobotId ? ` | ClaimedBy: ${payloadObj.ownerRobotId}` : '';
-      lines.push(`[${timeStr}] ${dirSymbol} ${targetStr} | ${msg.type}${taskIdStr}${scoreStr}${winnerStr}`);
+      const summary = formatMessageSummary(msg);
+      lines.push(`[${timeStr}] ${msg.senderId} → ${msg.receiverId} | [${msg.type}] ${summary}`);
     });
     const fullText = lines.join('\n');
     navigator.clipboard.writeText(fullText);
@@ -54,7 +149,10 @@ export const RobotCommunicationSubTab: React.FC = () => {
           const isSelected = selectedItemId === robot.id;
           const p2pNode = p2pNodes[robot.id];
           const isOnline = p2pNode ? p2pNode.isOnline : (robot.isOnline ?? true);
-          const history = p2pNode ? p2pNode.history.filter((m) => m.type !== 'HEARTBEAT') : [];
+          // Filter out internal heartbeats and routine non-actionable status messages
+          const history = p2pNode
+            ? p2pNode.history.filter((m) => m.type !== 'HEARTBEAT' && (m.type !== 'STATUS_UPDATE' || m.payload?.body))
+            : [];
 
           return (
             <div
@@ -106,10 +204,13 @@ export const RobotCommunicationSubTab: React.FC = () => {
                 <div>Cap: <span className="text-text font-semibold">{robot.payloadCapacity ?? 20}kg</span></div>
               </div>
 
-              {/* Local Peer Knowledge Table (Independent Peer Position Knowledge) */}
+              {/* Local Peer Knowledge Table (Independent Peer Awareness) */}
               {p2pNode && Object.keys(p2pNode.peerList).length > 0 && (
                 <div className="px-3 py-1.5 bg-slate-900 border-b border-slate-800 text-[9.5px] font-mono text-slate-300">
-                  <div className="text-[8.5px] font-bold text-slate-400 uppercase tracking-wider mb-1">Local Peer Knowledge Table:</div>
+                  <div className="text-[8.5px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1">
+                    <Radio size={10} className="text-cyan-400" />
+                    Local Peer Knowledge Table:
+                  </div>
                   <div className="flex flex-wrap gap-1.5">
                     {Object.values(p2pNode.peerList).map((peer) => (
                       <span key={peer.robotId} className="px-1.5 py-0.5 rounded bg-slate-800/90 border border-slate-700/80">
@@ -128,10 +229,9 @@ export const RobotCommunicationSubTab: React.FC = () => {
               )}
 
               {/* Individual AMR Communication Area */}
-              <div className="p-2 bg-[#1E293B] flex-1 flex flex-col min-h-[160px] max-h-[200px]">
-
-                <div className="text-[9px] font-bold tracking-wider text-slate-400 uppercase mb-1 flex justify-between items-center">
-                  <span>{robot.id} P2P Direct Log</span>
+              <div className="p-2 bg-[#0F172A] flex-1 flex flex-col min-h-[170px] max-h-[220px]">
+                <div className="text-[9px] font-bold tracking-wider text-slate-400 uppercase mb-1.5 flex justify-between items-center">
+                  <span className="text-cyan-400 font-semibold">{robot.id} P2P Communication</span>
                   <div className="flex items-center gap-2">
                     <span className="text-emerald-400 font-mono text-[9px]">{history.length} msgs</span>
                     <button
@@ -155,7 +255,7 @@ export const RobotCommunicationSubTab: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto flex flex-col gap-1 font-mono text-[10px] pr-1">
+                <div className="flex-1 overflow-y-auto flex flex-col gap-1.5 font-mono text-[10px] pr-1">
                   {history.length === 0 ? (
                     <div className="text-slate-500 italic text-center mt-6 text-[10px]">
                       No P2P communications for {robot.id} yet.
@@ -164,23 +264,40 @@ export const RobotCommunicationSubTab: React.FC = () => {
                     history.map((msg) => {
                       const isOutgoing = msg.senderId === robot.id;
                       const timeStr = new Date(msg.timestamp).toLocaleTimeString([], { hour12: false });
-                      const recipientStr = msg.receiverId === 'ALL' ? 'TO ALL' : isOutgoing ? `TO ${msg.receiverId}` : `FROM ${msg.senderId}`;
+                      const summary = formatMessageSummary(msg);
+                      const badgeClass = getMsgTypeBadgeClass(msg.type);
 
                       return (
                         <div
                           key={msg.id}
-                          className={`p-1 rounded text-[9.5px] border ${
+                          className={`p-1.5 rounded-md text-[9.5px] border transition-colors ${
                             isOutgoing
-                              ? 'bg-slate-800/80 border-cyan-800 text-cyan-200'
-                              : 'bg-slate-800/40 border-emerald-800 text-emerald-200'
+                              ? 'bg-slate-800/90 border-cyan-700/60 shadow-sm'
+                              : 'bg-slate-850/80 border-slate-700/80'
                           }`}
                         >
-                          <div className="flex justify-between items-center text-[8.5px] opacity-75 font-semibold">
-                            <span>[{timeStr}] {recipientStr}</span>
-                            <span className="uppercase text-[8px] px-1 bg-slate-900/60 rounded text-amber-300">{msg.type}</span>
+                          {/* Header: SENDER → RECEIVER & Type Badge */}
+                          <div className="flex justify-between items-center text-[9px] font-semibold mb-0.5">
+                            <div className="flex items-center gap-1">
+                              <span className={`font-bold ${isOutgoing ? 'text-cyan-300' : 'text-slate-300'}`}>
+                                {msg.senderId}
+                              </span>
+                              <ArrowRight size={10} className="text-slate-500" />
+                              <span className={`font-bold ${msg.receiverId === 'ALL' ? 'text-amber-400' : 'text-emerald-300'}`}>
+                                {msg.receiverId}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span className={`uppercase text-[8px] px-1.5 py-0.2 rounded border ${badgeClass}`}>
+                                {msg.type}
+                              </span>
+                              <span className="text-slate-400 text-[8.5px]">{timeStr}</span>
+                            </div>
                           </div>
-                          <div className="mt-0.5 text-slate-100 font-sans text-[10px]">
-                            {msg.payload?.body || msg.payload?.status || JSON.stringify(msg.payload || {})}
+
+                          {/* Body Content */}
+                          <div className="mt-0.5 text-slate-100 font-sans text-[10px] leading-tight">
+                            {summary}
                           </div>
                         </div>
                       );

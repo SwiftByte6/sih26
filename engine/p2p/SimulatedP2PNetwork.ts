@@ -115,18 +115,51 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
 
     if (message.type !== 'HEARTBEAT') {
       try {
-        const bodyText = typeof message.payload === 'string' ? message.payload : message.payload?.body || message.payload?.status || message.type;
-        const category = (message.type.startsWith('TASK_') ? 'TASK' : message.type === 'STATUS_UPDATE' ? 'SYSTEM' : 'COORDINATION') as any;
-        const warehouseStore = require('../../store/warehouseStore').useWarehouseStore.getState();
-        warehouseStore.addCommunication({
-          id: `COMM-${message.timestamp}-${Math.random().toString(36).substring(2, 7)}`,
-          timestamp: message.timestamp,
-          sender: message.senderId,
-          receiver: message.receiverId,
-          category,
-          priority: 'NORMAL',
-          message: `[${message.type}] ${bodyText}`,
-        });
+        let isEligibleForGlobalLog = true;
+
+        // Suppress routine status updates from cluttering logs unless they indicate meaningful events
+        if (message.type === 'STATUS_UPDATE') {
+          isEligibleForGlobalLog = Boolean(message.payload?.body || message.payload?.isSignificant);
+        }
+
+        if (isEligibleForGlobalLog) {
+          const bodyText = typeof message.payload === 'string' ? message.payload : message.payload?.body || message.payload?.status || message.type;
+          const category = (
+            message.type.startsWith('TASK_') || message.type === 'CONSENSUS'
+              ? 'TASK'
+              : message.type === 'STATUS_UPDATE'
+              ? 'SYSTEM'
+              : message.type === 'EMERGENCY'
+              ? 'SAFETY'
+              : message.type === 'ROBOT_FAILURE'
+              ? 'FAILURE'
+              : message.type === 'TASK_RECOVERY_ANNOUNCEMENT' || message.type === 'TASK_HANDOVER_REQUEST'
+              ? 'RECOVERY'
+              : 'COORDINATION'
+          ) as any;
+
+          const isUrgent = message.payload?.task?.priority === 'URGENT' || (typeof bodyText === 'string' && bodyText.includes('URGENT'));
+          const priority = (
+            message.type === 'EMERGENCY' || message.type === 'ROBOT_FAILURE'
+              ? 'CRITICAL'
+              : message.type === 'CONFLICT_DETECTED' || message.type === 'YIELD_REQUEST'
+              ? 'WARNING'
+              : isUrgent
+              ? 'IMPORTANT'
+              : 'NORMAL'
+          ) as any;
+
+          const warehouseStore = require('../../store/warehouseStore').useWarehouseStore.getState();
+          warehouseStore.addCommunication({
+            id: `COMM-${message.timestamp}-${Math.random().toString(36).substring(2, 7)}`,
+            timestamp: message.timestamp,
+            sender: message.senderId,
+            receiver: message.receiverId,
+            category,
+            priority,
+            message: `[${message.type}] ${bodyText}`,
+          });
+        }
       } catch (e) {}
     }
 
@@ -527,6 +560,20 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
 
             if (consensusWinner && !taskKnowledge.claimedBy) {
               taskKnowledge.allocationState = 'CONSENSUS';
+
+              // Peer nodes agree with candidate winner and send directed CONSENSUS ACCEPT
+              if (targetNode.robotId !== consensusWinner && !taskKnowledge.myConsensusSent) {
+                taskKnowledge.myConsensusSent = true;
+                setTimeout(() => {
+                  this.sendDirectMessage(targetNode.robotId, consensusWinner!, 'CONSENSUS', {
+                    taskId,
+                    proposedWinnerId: consensusWinner,
+                    allocationRound: taskKnowledge.allocationRound || 1,
+                    body: `CONSENSUS: ${taskId} | ACCEPT`,
+                  });
+                }, 0);
+              }
+
               const warehouseStoreState = require('../../store/warehouseStore').useWarehouseStore.getState();
               const myRobot = warehouseStoreState.robots.find((r: any) => r.id === targetNode.robotId);
               const isFreeToClaim = myRobot && (myRobot.state === 'WAITING' || myRobot.state === 'IDLE') && !myRobot.currentTask && !myRobot.currentTaskId;
