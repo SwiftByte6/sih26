@@ -465,6 +465,55 @@ export function runCollisionAvoidanceTestSuite(): CollisionTestSummary {
     results.push({ testName: 'TEST 10: P2P Communication & Visual Link Broadcast on Deconfliction', passed: false, details: e.message });
   }
 
+  // TEST 11: Idle AMR Cooperative Sidestepping for Active Peer
+  try {
+    const robots: Robot[] = [
+      {
+        id: 'AMR-02',
+        label: 'AMR-02',
+        col: 13,
+        row: 5,
+        state: 'MOVING',
+        battery: 90,
+        speed: 1.2,
+        currentTask: 'T-102',
+        currentTaskId: 'T-102',
+        path: [{ col: 13, row: 4 }],
+      },
+      {
+        id: 'AMR-01',
+        label: 'AMR-01',
+        col: 13,
+        row: 4,
+        state: 'WAITING',
+        battery: 90,
+        speed: 1.2,
+        currentTask: null,
+        currentTaskId: null,
+        path: [],
+      },
+    ];
+
+    const blockedMap = new Map<string, number>();
+    const res = resolveTickCollisions(robots, dummyObstacles, dummyTasks, blockedMap);
+
+    const hasSidestepReq = res.idleSidestepRequests.some(
+      (req) => req.idleRobotId === 'AMR-01' && req.requestingRobotId === 'AMR-02' && req.blockedCell.col === 13 && req.blockedCell.row === 4
+    );
+    const idleYielded = res.yieldingEvents.some((y) => y.yieldingRobotId === 'AMR-01' && y.priorityRobotId === 'AMR-02');
+
+    const t11Passed = hasSidestepReq && idleYielded;
+    results.push({
+      testName: 'TEST 11: Idle AMR Cooperative Sidestep & Yield on Active Contention',
+      passed: t11Passed,
+      details: t11Passed
+        ? 'Parked idle AMR-01 correctly identified to sidestep and yield right of way to active AMR-02.'
+        : `Failed: hasSidestepReq=${hasSidestepReq}, idleYielded=${idleYielded}`,
+    });
+  } catch (e: any) {
+    results.push({ testName: 'TEST 11: Idle AMR Cooperative Sidestep & Yield on Active Contention', passed: false, details: e.message });
+  }
+
   const passCount = results.filter((r) => r.passed).length;
   return {
     timestamp: new Date().toISOString(),

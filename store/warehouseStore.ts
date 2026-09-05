@@ -869,30 +869,52 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
     });
 
     const pendingTasks = taskStore.getPendingTasks();
-
-    // Announce the top unassigned pending task that has not been announced yet,
-    // or re-announce an unassigned pending task if 4+ seconds have elapsed.
-    // We announce 1 task at a time to allow the winner to transition to MOVING before the next task is announced.
     const unassignedTasks = pendingTasks.filter((t) => t.status === 'PENDING' && t.assigned_robot_id === null);
 
-    let taskToAnnounce = unassignedTasks.find((t) => !announcedTaskIds.has(t.task_id));
-    if (!taskToAnnounce) {
-      const hasFreeRobot = state.robots.some(
-        (r) => (r.state === 'WAITING' || r.state === 'IDLE') && !r.currentTask && !r.currentTaskId && (r.isOnline ?? true)
-      );
-      if (hasFreeRobot) {
-        taskToAnnounce = unassignedTasks.find((t) => {
+    // Group tasks strictly by priority
+    const urgentTasks = unassignedTasks.filter((t) => t.priority === 'URGENT');
+    const normalTasks = unassignedTasks.filter((t) => t.priority === 'NORMAL');
+    const lowTasks = unassignedTasks.filter((t) => t.priority === 'LOW');
+
+    const hasFreeRobot = state.robots.some(
+      (r) => (r.state === 'WAITING' || r.state === 'IDLE') && !r.currentTask && !r.currentTaskId && (r.isOnline ?? true)
+    );
+
+    let taskToAnnounce: any = undefined;
+
+    // STRICT PRIORITY GATE:
+    // 1. If any URGENT task is unassigned, ONLY allocate URGENT tasks! Block NORMAL and LOW tasks from leaking announcements.
+    // 2. Only if NO urgent tasks are waiting, announce NORMAL tasks.
+    // 3. Only if NO urgent or normal tasks are waiting, announce LOW tasks.
+    if (urgentTasks.length > 0) {
+      taskToAnnounce = urgentTasks.find((t) => !announcedTaskIds.has(t.task_id));
+      if (!taskToAnnounce && hasFreeRobot) {
+        // Accelerate urgent task re-announcement (every 1.5s) to ensure immediate bidding/consensus on available AMR
+        taskToAnnounce = urgentTasks.find((t) => {
           const lastTime = announcedTaskTimestamps.get(t.task_id);
-          const timeSince = lastTime ? (now - lastTime) : 0;
-          const shouldReannounce = !lastTime || (now - lastTime > 3000);
-          console.log(`[P2P] Checking unassigned task ${t.task_id}. hasFreeRobot=true. lastTime=${lastTime}. timeSince=${timeSince}. shouldReannounce=${shouldReannounce}`);
-          return shouldReannounce;
+          return !lastTime || (now - lastTime > 1500);
+        });
+      }
+    } else if (normalTasks.length > 0) {
+      taskToAnnounce = normalTasks.find((t) => !announcedTaskIds.has(t.task_id));
+      if (!taskToAnnounce && hasFreeRobot) {
+        taskToAnnounce = normalTasks.find((t) => {
+          const lastTime = announcedTaskTimestamps.get(t.task_id);
+          return !lastTime || (now - lastTime > 2500);
+        });
+      }
+    } else if (lowTasks.length > 0) {
+      taskToAnnounce = lowTasks.find((t) => !announcedTaskIds.has(t.task_id));
+      if (!taskToAnnounce && hasFreeRobot) {
+        taskToAnnounce = lowTasks.find((t) => {
+          const lastTime = announcedTaskTimestamps.get(t.task_id);
+          return !lastTime || (now - lastTime > 3000);
         });
       }
     }
 
     if (taskToAnnounce) {
-      console.log(`[P2P] announcement sent for task ${taskToAnnounce.task_id}`);
+      console.log(`[P2P] announcement sent for task ${taskToAnnounce.task_id} [${taskToAnnounce.priority}]`);
       announcedTaskIds.add(taskToAnnounce.task_id);
       announcedTaskTimestamps.set(taskToAnnounce.task_id, now);
       const currentRound = (taskAllocationRounds.get(taskToAnnounce.task_id) || 0) + 1;
@@ -908,7 +930,7 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
         priority: taskToAnnounce.priority,
         requiredCapability: taskToAnnounce.requiredCapability,
         requiredSensingRadius: taskToAnnounce.requiredSensingRadius,
-        body: `TASK_ANNOUNCEMENT: ${taskToAnnounce.task_id} [${taskToAnnounce.task_type}] Pickup: ${taskToAnnounce.pickup_point} -> Drop: ${taskToAnnounce.drop_point} (Weight: ${taskToAnnounce.weight}kg, Round ${currentRound})`,
+        body: `TASK_ANNOUNCEMENT: ${taskToAnnounce.task_id} [${taskToAnnounce.priority}] Pickup: ${taskToAnnounce.pickup_point} -> Drop: ${taskToAnnounce.drop_point} (Weight: ${taskToAnnounce.weight}kg, Round ${currentRound})`,
       });
     }
 
@@ -956,6 +978,49 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
       state
     );
 
+    // 2b. Execute Cooperative Sidestepping for Idle AMRs blocking active robots
+    const sidesteppedRobotPositions = new Map<string, { col: number; row: number }>();
+    if (collisionResolution.idleSidestepRequests && collisionResolution.idleSidestepRequests.length > 0) {
+      collisionResolution.idleSidestepRequests.forEach((req) => {
+        const idleRobot = movingRobots.find((r) => r.id === req.idleRobotId);
+        if (!idleRobot) return;
+
+        // Candidate adjacent directions (up, down, left, right)
+        const deltas = [
+          { dc: 0, dr: -1 },
+          { dc: 0, dr: 1 },
+          { dc: -1, dr: 0 },
+          { dc: 1, dr: 0 },
+        ];
+
+        // Find a walkable neighbor cell that is not the blocked cell, not occupied by another robot, and not obstacle
+        for (const d of deltas) {
+          const candCol = idleRobot.col + d.dc;
+          const candRow = idleRobot.row + d.dr;
+
+          if (candCol === req.blockedCell.col && candRow === req.blockedCell.row) continue;
+          if (!isWalkable(state, candRow, candCol)) continue;
+
+          // Check not occupied by other robots
+          const occupied = movingRobots.some(
+            (r) => (r.id !== idleRobot.id) && (
+              (sidesteppedRobotPositions.has(r.id) ? sidesteppedRobotPositions.get(r.id)!.col === candCol && sidesteppedRobotPositions.get(r.id)!.row === candRow : r.col === candCol && r.row === candRow)
+            )
+          );
+          if (occupied) continue;
+
+          // Found a clear sidestep cell!
+          sidesteppedRobotPositions.set(idleRobot.id, { col: candCol, row: candRow });
+          p2pStore.sendDirectMessage(idleRobot.id, req.requestingRobotId, 'TEXT', {
+            body: `Clearing path: AMR ${idleRobot.id} sidestepped to (${candCol},${candRow}) for ${req.requestingRobotId}`,
+          });
+          newLinks.push({ from: idleRobot.id, to: req.requestingRobotId, expires: now + 2500 });
+          blockedTicksMap.set(req.requestingRobotId, 0);
+          break;
+        }
+      });
+    }
+
     // Process yielding events for P2P messaging (throttled)
     collisionResolution.yieldingEvents.forEach((evt) => {
       const conflictKey = `${evt.yieldingRobotId}-${evt.priorityRobotId}`;
@@ -969,9 +1034,54 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
     });
 
     const updatedRobots = movingRobots.map((robot) => {
+      // If this robot was sidestepped to clear path for an active peer
+      if (sidesteppedRobotPositions.has(robot.id)) {
+        const newPos = sidesteppedRobotPositions.get(robot.id)!;
+        return {
+          ...robot,
+          col: newPos.col,
+          row: newPos.row,
+          path: [],
+          state: 'WAITING' as const,
+        };
+      }
+
       if ((robot.state === 'MOVING' || robot.state === 'WAITING_FOR_PATH_CLEARANCE') && robot.path.length > 0) {
         // Check if robot is blocked by collision coordinator
         if (collisionResolution.blockedRobotIds.has(robot.id)) {
+          // Docking Proximity Check: If blocked while already adjacent to target pickup/drop POI, complete action directly
+          if (robot.taskPhase === 'TO_PICKUP' && robot.currentTaskId && robot.dropPoint && robot.pickupPoint) {
+            const dist = Math.abs(robot.col - robot.pickupPoint.col) + Math.abs(robot.row - robot.pickupPoint.row);
+            if (dist <= 1) {
+              taskStore.startTask(robot.currentTaskId);
+              p2pStore.broadcastMessage(robot.id, 'TEXT', { body: `Picked up item at ${robot.pickupPoint.label} (adjacent dock). Heading to ${robot.dropPoint.label}` });
+              const dropPath = findPathAStar(state, robot.row, robot.col, robot.dropPoint.row, robot.dropPoint.col);
+              blockedTicksMap.set(robot.id, 0);
+              return {
+                ...robot,
+                path: dropPath,
+                state: (dropPath.length > 0 ? 'MOVING' : 'WAITING') as RobotState,
+                taskPhase: 'TO_DROP' as const,
+              };
+            }
+          } else if (robot.taskPhase === 'TO_DROP' && robot.currentTaskId && robot.dropPoint) {
+            const dist = Math.abs(robot.col - robot.dropPoint.col) + Math.abs(robot.row - robot.dropPoint.row);
+            if (dist <= 1) {
+              taskStore.completeTask(robot.currentTaskId);
+              p2pStore.broadcastMessage(robot.id, 'TEXT', { body: `Task [${robot.currentTaskId}] completed at ${robot.dropPoint.label}.` });
+              newLinks.push({ from: robot.id, to: 'ALL', expires: now + 2000 });
+              blockedTicksMap.set(robot.id, 0);
+              return {
+                ...robot,
+                path: [],
+                state: 'WAITING' as const,
+                taskPhase: null,
+                currentTaskId: null,
+                currentTask: null,
+              };
+            }
+          }
+
           const blockedTicks = blockedTicksMap.get(robot.id) || 0;
           // Reactive dynamic replanning for AMRs blocked >= 2 ticks
           if (blockedTicks >= 2 && robot.path.length > 0) {

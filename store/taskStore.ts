@@ -590,6 +590,10 @@ export const useTaskStore = create<TaskState>()(
       if (warehouseStore && warehouseStore.removeAnnouncedTaskId) {
         warehouseStore.removeAnnouncedTaskId(taskId);
       }
+      const p2pStore = require('./p2pStore').useP2PStore.getState();
+      if (p2pStore && p2pStore.removeTaskFromAllNodes) {
+        p2pStore.removeTaskFromAllNodes(taskId);
+      }
     } catch (e) {}
     const task = get().getTask(taskId);
     if (task) notifyListeners('TASK_PRIORITY_CHANGED', task);

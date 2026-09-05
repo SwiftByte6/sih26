@@ -10,10 +10,17 @@ export interface MovementStepIntent {
   hasActiveTask: boolean;
 }
 
+export interface IdleSidestepRequest {
+  idleRobotId: string;
+  requestingRobotId: string;
+  blockedCell: { col: number; row: number };
+}
+
 export interface CollisionResolutionResult {
   allowedRobotIds: Set<string>;
   blockedRobotIds: Map<string, { blockingRobotId: string; reason: string }>;
   yieldingEvents: Array<{ yieldingRobotId: string; priorityRobotId: string; reason: string }>;
+  idleSidestepRequests: IdleSidestepRequest[];
 }
 
 export interface TrajectoryConflict {
@@ -274,6 +281,7 @@ export function resolveTickCollisions(
   const allowedRobotIds = new Set<string>();
   const blockedRobotIds = new Map<string, { blockingRobotId: string; reason: string }>();
   const yieldingEvents: Array<{ yieldingRobotId: string; priorityRobotId: string; reason: string }> = [];
+  const idleSidestepRequests: IdleSidestepRequest[] = [];
 
   const taskMap = new Map<string, Task>();
   tasks.forEach((t) => taskMap.set(t.task_id, t));
@@ -399,7 +407,7 @@ export function resolveTickCollisions(
     }
   });
 
-  // Step 4: Detect Occupied Cell Entry
+  // Step 4: Detect Occupied Cell Entry & Idle Yielding Requests
   intents.forEach((intent) => {
     if (!intent.targetCell || blockedRobotIds.has(intent.robotId)) return;
 
@@ -407,18 +415,47 @@ export function resolveTickCollisions(
     const occupantRobotId = currentOccupiedCells.get(targetKey);
 
     if (occupantRobotId && occupantRobotId !== intent.robotId) {
-      const occupantBlocked = blockedRobotIds.has(occupantRobotId);
+      // If occupant was already blocked in Step 3 as the head-on swap loser to THIS intent, do not block the winner
+      const occupantBlockedInfo = blockedRobotIds.get(occupantRobotId);
+      if (occupantBlockedInfo && occupantBlockedInfo.blockingRobotId === intent.robotId && occupantBlockedInfo.reason.includes('Head-on swap')) {
+        return;
+      }
 
-      if (occupantBlocked || !intents.some((i) => i.robotId === occupantRobotId && i.targetCell !== null)) {
-        blockedRobotIds.set(intent.robotId, {
-          blockingRobotId: occupantRobotId,
-          reason: `Target cell occupied by ${occupantRobotId}`,
-        });
-        yieldingEvents.push({
-          yieldingRobotId: intent.robotId,
-          priorityRobotId: occupantRobotId,
-          reason: `Occupied cell at (${intent.targetCell.col},${intent.targetCell.row})`,
-        });
+      const occupantBlocked = blockedRobotIds.has(occupantRobotId);
+      const occupantIntent = intents.find((i) => i.robotId === occupantRobotId);
+      const isOccupantMoving = Boolean(occupantIntent && occupantIntent.targetCell !== null);
+
+      if (occupantBlocked || !isOccupantMoving) {
+        const occupantIsIdle = Boolean(occupantIntent && !occupantIntent.hasActiveTask);
+        const requesterIsActive = intent.hasActiveTask;
+
+        if (occupantIsIdle && requesterIsActive) {
+          // The idle occupant must sidestep and yield to the active robot!
+          idleSidestepRequests.push({
+            idleRobotId: occupantRobotId,
+            requestingRobotId: intent.robotId,
+            blockedCell: { col: intent.targetCell.col, row: intent.targetCell.row },
+          });
+          blockedRobotIds.set(intent.robotId, {
+            blockingRobotId: occupantRobotId,
+            reason: `Waiting for idle ${occupantRobotId} to clear (${intent.targetCell.col},${intent.targetCell.row})`,
+          });
+          yieldingEvents.push({
+            yieldingRobotId: occupantRobotId,
+            priorityRobotId: intent.robotId,
+            reason: `Idle AMR ${occupantRobotId} clearing path for active ${intent.robotId}`,
+          });
+        } else {
+          blockedRobotIds.set(intent.robotId, {
+            blockingRobotId: occupantRobotId,
+            reason: `Target cell occupied by ${occupantRobotId}`,
+          });
+          yieldingEvents.push({
+            yieldingRobotId: intent.robotId,
+            priorityRobotId: occupantRobotId,
+            reason: `Occupied cell at (${intent.targetCell.col},${intent.targetCell.row})`,
+          });
+        }
       }
     }
   });
@@ -438,5 +475,6 @@ export function resolveTickCollisions(
     allowedRobotIds,
     blockedRobotIds,
     yieldingEvents,
+    idleSidestepRequests,
   };
 }
