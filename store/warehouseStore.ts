@@ -372,6 +372,12 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
   pauseSimulation: () => set({ isRunning: false }),
   stopSimulation: () => set({ isRunning: false }),
   resetSimulation: () => {
+    announcedTaskIds.clear();
+    announcedTaskTimestamps.clear();
+    taskAllocationRounds.clear();
+    lastConflictTime.clear();
+    blockedTicksMap.clear();
+    lastRobotTelemetry.clear();
     useTaskStore.getState().resetTasks();
     const layout = get().savedLayout;
     const cloned = cloneLayout(layout);
@@ -1001,10 +1007,25 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
     const pendingTasks = taskStore.getPendingTasks();
     const unassignedTasks = pendingTasks.filter((t) => t.status === 'PENDING' && t.assigned_robot_id === null);
 
+    const isTaskResolvable = (t: any) => {
+      const p = resolveLocationCoordinates(t.pickup_point, state.pois, state.shelves);
+      const d = resolveLocationCoordinates(t.drop_point, state.pois, state.shelves);
+      return Boolean(p && d);
+    };
+
+    // Auto-fail tasks with fundamentally unresolvable coordinates so user is notified and fleet does not deadlock
+    unassignedTasks.forEach((t) => {
+      if (!isTaskResolvable(t)) {
+        taskStore.failTask(t.task_id, `Unresolvable location: pickup="${t.pickup_point}", drop="${t.drop_point}"`);
+      }
+    });
+
+    const validUnassigned = taskStore.getPendingTasks().filter((t) => t.status === 'PENDING' && t.assigned_robot_id === null && isTaskResolvable(t));
+
     // Group tasks strictly by priority
-    const urgentTasks = unassignedTasks.filter((t) => t.priority === 'URGENT');
-    const normalTasks = unassignedTasks.filter((t) => t.priority === 'NORMAL');
-    const lowTasks = unassignedTasks.filter((t) => t.priority === 'LOW');
+    const urgentTasks = validUnassigned.filter((t) => t.priority === 'URGENT');
+    const normalTasks = validUnassigned.filter((t) => t.priority === 'NORMAL');
+    const lowTasks = validUnassigned.filter((t) => t.priority === 'LOW');
 
     const hasFreeRobot = state.robots.some(
       (r) => (r.state === 'WAITING' || r.state === 'IDLE') && !r.currentTask && !r.currentTaskId && (r.isOnline ?? true)
@@ -1019,10 +1040,9 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
     if (urgentTasks.length > 0) {
       taskToAnnounce = urgentTasks.find((t) => !announcedTaskIds.has(t.task_id));
       if (!taskToAnnounce && hasFreeRobot) {
-        // Accelerate urgent task re-announcement (every 1.5s) to ensure immediate bidding/consensus on available AMR
         taskToAnnounce = urgentTasks.find((t) => {
           const lastTime = announcedTaskTimestamps.get(t.task_id);
-          return !lastTime || (now - lastTime > 1500);
+          return !lastTime || (now - lastTime > 1000);
         });
       }
     } else if (normalTasks.length > 0) {
@@ -1030,7 +1050,7 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
       if (!taskToAnnounce && hasFreeRobot) {
         taskToAnnounce = normalTasks.find((t) => {
           const lastTime = announcedTaskTimestamps.get(t.task_id);
-          return !lastTime || (now - lastTime > 2500);
+          return !lastTime || (now - lastTime > 1000);
         });
       }
     } else if (lowTasks.length > 0) {
@@ -1038,7 +1058,7 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
       if (!taskToAnnounce && hasFreeRobot) {
         taskToAnnounce = lowTasks.find((t) => {
           const lastTime = announcedTaskTimestamps.get(t.task_id);
-          return !lastTime || (now - lastTime > 3000);
+          return !lastTime || (now - lastTime > 1500);
         });
       }
     }
@@ -1274,10 +1294,20 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
               newPath = findPathAStar(state, nextCell.row, nextCell.col, robot.dropPoint.row, robot.dropPoint.col);
               newTaskPhase = 'TO_DROP';
               if (newPath.length === 0) {
-                taskStore.failTask(robot.currentTaskId, 'No path to drop');
-                newState = 'WAITING';
-                newTaskPhase = null;
-                newCurrentTaskId = null;
+                const distToDrop = Math.abs(nextCell.col - robot.dropPoint.col) + Math.abs(nextCell.row - robot.dropPoint.row);
+                if (distToDrop <= 1) {
+                  taskStore.completeTask(robot.currentTaskId);
+                  p2pStore.broadcastMessage(robot.id, 'TEXT', { body: `Task [${robot.currentTaskId}] completed at ${robot.dropPoint.label}.` });
+                  newLinks.push({ from: robot.id, to: 'ALL', expires: now + 2000 });
+                  newState = 'WAITING';
+                  newTaskPhase = null;
+                  newCurrentTaskId = null;
+                } else {
+                  taskStore.failTask(robot.currentTaskId, 'No path to drop');
+                  newState = 'WAITING';
+                  newTaskPhase = null;
+                  newCurrentTaskId = null;
+                }
               }
             } else if (robot.taskPhase === 'TO_DROP' && robot.currentTaskId) {
               // Reached drop, task complete
