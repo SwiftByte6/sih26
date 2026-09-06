@@ -12,6 +12,8 @@ import { Obstacle3D } from './Obstacle3D';
 import { POI3D } from './POI3D';
 import { Path3D } from './Path3D';
 import { Pallet3D } from './Pallet3D';
+import { RobotCameraController } from './RobotCameraController';
+import { RobotCameraOverlay } from './RobotCameraOverlay';
 import { warehouseWorldSize } from '../../lib/coords';
 
 export const Warehouse3D: React.FC = () => {
@@ -26,6 +28,7 @@ export const Warehouse3D: React.FC = () => {
   const cellSize = useWarehouseStore((s) => s.cellSize);
   const appMode = useWarehouseStore((s) => s.appMode);
   const showGrid = useWarehouseStore((s) => s.showGrid);
+  const cameraMode = useWarehouseStore((s) => s.cameraMode);
   const [orbitLocked, setOrbitLocked] = useState(false);
 
   const { width: warehouseWidth, depth: warehouseDepth } = warehouseWorldSize(gridCols, gridRows, cellSize);
@@ -40,6 +43,7 @@ export const Warehouse3D: React.FC = () => {
 
   return (
     <div className="w-full h-full relative" style={{ background: '#e2e8f0' }}>
+      <RobotCameraOverlay />
       <Canvas
         shadows
         gl={{ antialias: true, alpha: false }}
@@ -56,9 +60,10 @@ export const Warehouse3D: React.FC = () => {
           near={5}
           far={6000}
         />
+        <RobotCameraController cellSize={cellSize} />
         <OrbitControls
           target={[centerX, 0, centerZ]}
-          enabled={!orbitLocked}
+          enabled={!orbitLocked && cameraMode === 'OVERVIEW'}
           enableRotate
           enablePan
           enableZoom

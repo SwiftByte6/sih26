@@ -31,6 +31,7 @@ export const DEFAULT_TRANSFORM: ObjectTransform = {
 
 export type AppMode = 'BUILDER' | 'PLAY';
 export type ViewMode = '2D' | '3D';
+export type CameraMode = 'OVERVIEW' | 'FOLLOW' | 'POV';
 export type TransformMode = 'translate' | 'rotate' | 'scale';
 export type PlaceableType = 'SHELF' | 'OBSTACLE' | 'ROBOT' | 'PICKUP' | 'DROP' | 'CHARGER' | 'PALLET';
 export type SelectedItemType =

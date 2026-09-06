@@ -1,13 +1,36 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">
-<defs><filter id="s"><feGaussianBlur stdDeviation="4"/></filter></defs>
-<ellipse cx="60" cy="94" rx="37" ry="10" fill="#000" opacity=".3" filter="url(#s)"/>
-<rect x="25" y="22" width="70" height="68" rx="19" fill="#171e22" stroke="#59656b" stroke-width="4"/>
-<rect x="31" y="30" width="58" height="51" rx="14" fill="#283136"/>
-<path d="M43 38h34l9 13H34z" fill="#20282c"/>
-<rect x="43" y="39" width="34" height="7" rx="3.5" fill="#69767b"/>
-<circle cx="60" cy="64" r="10" fill="#11181b" stroke="#657278" stroke-width="2"/>
-<circle cx="60" cy="64" r="4" fill="#f2b51d"/>
-<path d="M60 17l-8 10h16z" fill="#e2e8ea"/>
-<circle cx="39" cy="84" r="5" fill="#0d1215"/><circle cx="81" cy="84" r="5" fill="#0d1215"/>
-<circle cx="60" cy="25" r="3" fill="#58c7e8"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 700">
+<defs>
+  <linearGradient id="body" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f4f5f5"/><stop offset="1" stop-color="#c5c9cc"/></linearGradient>
+  <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#70777b"/><stop offset="1" stop-color="#4d5458"/></linearGradient>
+</defs>
+<!-- wheels -->
+<g fill="#25282a" stroke="#111416" stroke-width="5">
+ <rect x="70" y="95" width="65" height="145" rx="31"/>
+ <rect x="365" y="95" width="65" height="145" rx="31"/>
+ <rect x="70" y="475" width="65" height="145" rx="31"/>
+ <rect x="365" y="475" width="65" height="145" rx="31"/>
+</g>
+<g stroke="#555b5e" stroke-width="5" opacity=".7">
+ <path d="M85 120l32 20M85 153l32 20M85 186l32 20M380 120l32 20M380 153l32 20M380 186l32 20"/>
+ <path d="M85 500l32 20M85 533l32 20M85 566l32 20M380 500l32 20M380 533l32 20M380 566l32 20"/>
+</g>
+<!-- chassis -->
+<rect x="115" y="45" width="270" height="570" rx="52" fill="url(#body)" stroke="#aeb4b7" stroke-width="5"/>
+<rect x="130" y="60" width="240" height="540" rx="40" fill="none" stroke="#fff" stroke-width="5" opacity=".65"/>
+<!-- orange indicator -->
+<rect x="205" y="68" width="90" height="13" rx="7" fill="#ee8a18"/>
+<!-- camera bar -->
+<rect x="165" y="105" width="170" height="78" rx="38" fill="#202426"/>
+<circle cx="208" cy="144" r="25" fill="#11181c"/>
+<circle cx="208" cy="144" r="13" fill="#82b8d9"/>
+<circle cx="292" cy="144" r="25" fill="#11181c"/>
+<circle cx="292" cy="144" r="13" fill="#82b8d9"/>
+<circle cx="250" cy="144" r="11" fill="#0b0d0e"/>
+<circle cx="250" cy="144" r="4" fill="#5d666a"/>
+<!-- front panel -->
+<rect x="150" y="205" width="200" height="275" rx="23" fill="url(#panel)" stroke="#303638" stroke-width="4"/>
+<rect x="162" y="218" width="176" height="249" rx="16" fill="#656d71" opacity=".65"/>
+<!-- lower sensor -->
+<circle cx="250" cy="550" r="23" fill="#34393b" stroke="#1c2021" stroke-width="4"/>
+<circle cx="244" cy="544" r="7" fill="#747b7e" opacity=".7"/>
 </svg>

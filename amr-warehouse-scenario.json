@@ -1,0 +1,753 @@
+{
+  "gridRows": 40,
+  "gridCols": 60,
+  "walls": [
+    {
+      "id": "WALL-NORTH",
+      "side": "NORTH",
+      "height": 60,
+      "thickness": 3
+    },
+    {
+      "id": "WALL-SOUTH",
+      "side": "SOUTH",
+      "height": 60,
+      "thickness": 3
+    },
+    {
+      "id": "WALL-WEST",
+      "side": "WEST",
+      "height": 60,
+      "thickness": 3
+    },
+    {
+      "id": "WALL-EAST",
+      "side": "EAST",
+      "height": 60,
+      "thickness": 3
+    }
+  ],
+  "shelves": [
+    {
+      "id": "S1",
+      "col": 5,
+      "row": 5,
+      "width": 6,
+      "height": 2
+    },
+    {
+      "id": "S3",
+      "col": 21,
+      "row": 5,
+      "width": 6,
+      "height": 2
+    },
+    {
+      "id": "S4",
+      "col": 5,
+      "row": 15,
+      "width": 6,
+      "height": 2
+    },
+    {
+      "id": "S6",
+      "col": 21,
+      "row": 15,
+      "width": 6,
+      "height": 2
+    },
+    {
+      "posY": 0,
+      "rotX": 0,
+      "rotY": 0,
+      "rotZ": 0,
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "col": 13,
+      "row": 25,
+      "width": 6,
+      "height": 2,
+      "id": "S-007"
+    },
+    {
+      "posY": 0,
+      "rotX": 0,
+      "rotY": 0,
+      "rotZ": 0,
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "col": 32,
+      "row": 29,
+      "width": 6,
+      "height": 2,
+      "id": "S-008"
+    },
+    {
+      "posY": 0,
+      "rotX": 0,
+      "rotY": 0,
+      "rotZ": 0,
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "col": 39,
+      "row": 29,
+      "width": 6,
+      "height": 2,
+      "id": "S-009"
+    },
+    {
+      "posY": 0,
+      "rotX": 0,
+      "rotY": 0,
+      "rotZ": 0,
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "col": 37,
+      "row": 22,
+      "width": 6,
+      "height": 2,
+      "id": "S-010"
+    },
+    {
+      "posY": 0,
+      "rotX": 0,
+      "rotY": 0,
+      "rotZ": 0,
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "col": 23,
+      "row": 31,
+      "width": 6,
+      "height": 2,
+      "id": "S-011"
+    },
+    {
+      "col": 15,
+      "row": 5,
+      "width": 6,
+      "height": 2,
+      "id": "S-013"
+    },
+    {
+      "col": 15,
+      "row": 16,
+      "width": 6,
+      "height": 2,
+      "id": "S-014"
+    }
+  ],
+  "obstacles": [
+    {
+      "id": "O1",
+      "col": 11,
+      "row": 20,
+      "width": 2,
+      "height": 2,
+      "posY": 0,
+      "rotX": 0,
+      "rotY": 0,
+      "rotZ": 0,
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "posY": 0,
+      "rotX": 0,
+      "rotY": 0,
+      "rotZ": 0,
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "col": 26,
+      "row": 10,
+      "width": 2,
+      "height": 2,
+      "assetUrl": "/assets/warehouse_shelving_unit.glb",
+      "id": "OBS-002"
+    },
+    {
+      "posY": 0,
+      "rotX": 0,
+      "rotY": 0,
+      "rotZ": 0,
+      "scale": {
+        "x": 1.3,
+        "y": 1.3,
+        "z": 1.3
+      },
+      "col": 41,
+      "row": 15,
+      "width": 2,
+      "height": 2,
+      "assetUrl": "/assets/oil_drums.glb",
+      "id": "OBS-003"
+    },
+    {
+      "posY": 0,
+      "rotX": 0,
+      "rotY": 0,
+      "rotZ": 0,
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "col": 36,
+      "row": 10,
+      "width": 2,
+      "height": 2,
+      "assetUrl": "/assets/electric_vehicle_charging_point_trydan.glb",
+      "id": "OBS-004"
+    },
+    {
+      "posY": 0,
+      "rotX": 0,
+      "rotY": 180,
+      "rotZ": 0,
+      "scale": {
+        "x": 2.6,
+        "y": 2.1,
+        "z": 2
+      },
+      "col": 40,
+      "row": 36,
+      "width": 2,
+      "height": 2,
+      "assetUrl": "/assets/worn_warehouse_shelf.glb",
+      "id": "OBS-006"
+    },
+    {
+      "posY": 0,
+      "rotX": 0,
+      "rotY": 0,
+      "rotZ": 0,
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "col": 10,
+      "row": 7,
+      "width": 2,
+      "height": 2,
+      "assetUrl": "/assets/electric_vehicle_charging_point_trydan.glb",
+      "id": "OBS-007"
+    },
+    {
+      "posY": 0,
+      "rotX": 0,
+      "rotY": 0,
+      "rotZ": 0,
+      "scale": {
+        "x": 1.3,
+        "y": 1.3,
+        "z": 1.3
+      },
+      "col": 30,
+      "row": 15,
+      "width": 2,
+      "height": 2,
+      "assetUrl": "/assets/pallet_barrels.glb",
+      "id": "OBS-010"
+    },
+    {
+      "posY": 0,
+      "rotX": 0,
+      "rotY": 0,
+      "rotZ": 0,
+      "scale": {
+        "x": 1.6,
+        "y": 1.6,
+        "z": 1.6
+      },
+      "col": 2,
+      "row": 35,
+      "width": 2,
+      "height": 2,
+      "assetUrl": "/assets/industrial_assets.glb",
+      "id": "OBS-012"
+    },
+    {
+      "posY": 0,
+      "rotX": 0,
+      "rotY": -180,
+      "rotZ": 0,
+      "scale": {
+        "x": 1.5,
+        "y": 1.5,
+        "z": 1.5
+      },
+      "col": 20,
+      "row": 36,
+      "width": 2,
+      "height": 2,
+      "assetUrl": "/assets/warehouse_forklift_gameready.glb",
+      "id": "OBS-013"
+    },
+    {
+      "posY": 0,
+      "rotX": 0,
+      "rotY": -180,
+      "rotZ": 0,
+      "scale": {
+        "x": 1.5,
+        "y": 1.5,
+        "z": 1.5
+      },
+      "col": 15,
+      "row": 36,
+      "width": 2,
+      "height": 2,
+      "assetUrl": "/assets/warehouse_forklift_gameready.glb",
+      "id": "OBS-014"
+    },
+    {
+      "id": "SYS-1",
+      "row": 30,
+      "col": 53,
+      "width": 2,
+      "height": 2,
+      "posY": 0,
+      "rotX": 0,
+      "rotY": 0,
+      "rotZ": 0,
+      "scale": {
+        "x": 2.5,
+        "y": 2.5,
+        "z": 2.5
+      },
+      "assetUrl": "/assets/real_time_simulation_robot_machine.glb"
+    },
+    {
+      "id": "SYS-2",
+      "row": 10,
+      "col": 50,
+      "width": 2,
+      "height": 2,
+      "posY": 0,
+      "rotX": 0,
+      "rotY": 0,
+      "rotZ": 0,
+      "scale": {
+        "x": 3,
+        "y": 3,
+        "z": 3
+      },
+      "assetUrl": "/assets/simulation_laser_cutting_robot_systems.glb"
+    }
+  ],
+  "pois": [
+    {
+      "id": "POI1",
+      "type": "PICKUP",
+      "col": 8,
+      "row": 25,
+      "label": "PICKUP A",
+      "scale": {
+        "x": 1.6,
+        "y": 1.6,
+        "z": 1.6
+      }
+    },
+    {
+      "id": "POI2",
+      "type": "DROP",
+      "col": 24,
+      "row": 25,
+      "label": "DROP B",
+      "posY": 0,
+      "rotY": 0,
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "id": "POI3",
+      "type": "CHARGER",
+      "col": 26,
+      "row": 38,
+      "label": "CHARGER 1",
+      "posY": 0,
+      "rotY": 0,
+      "scale": {
+        "x": 1.3,
+        "y": 1.3,
+        "z": 1.3
+      }
+    },
+    {
+      "id": "POI5",
+      "type": "PICKUP",
+      "col": 13,
+      "row": 4,
+      "label": "Storage-02"
+    },
+    {
+      "id": "POI6",
+      "type": "DROP",
+      "col": 5,
+      "row": 14,
+      "label": "Packing Area B"
+    },
+    {
+      "id": "POI7",
+      "type": "PICKUP",
+      "col": 13,
+      "row": 14,
+      "label": "P3"
+    },
+    {
+      "posY": 0,
+      "rotX": 0,
+      "rotY": 0,
+      "rotZ": 0,
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "col": 43,
+      "row": 10,
+      "type": "PICKUP",
+      "label": "PICKUP 6",
+      "id": "POI-009"
+    },
+    {
+      "posY": 0,
+      "rotX": 0,
+      "rotY": 0,
+      "rotZ": 0,
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "col": 46,
+      "row": 10,
+      "type": "DROP",
+      "label": "DROP 3",
+      "id": "POI-010"
+    }
+  ],
+  "pallets": [
+    {
+      "id": "PAL-001",
+      "col": 7,
+      "row": 25,
+      "width": 1,
+      "height": 1,
+      "posY": 0,
+      "rotX": 0,
+      "rotY": 0,
+      "rotZ": 0,
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "id": "PAL-002",
+      "col": 23,
+      "row": 25,
+      "width": 1,
+      "height": 1,
+      "posY": 0,
+      "rotX": 0,
+      "rotY": 90,
+      "rotZ": 0,
+      "scale": {
+        "x": 1.6,
+        "y": 1.6,
+        "z": 1.6
+      }
+    },
+    {
+      "posY": 0,
+      "rotX": 0,
+      "rotY": 0,
+      "rotZ": 0,
+      "scale": {
+        "x": 1.6,
+        "y": 1.6,
+        "z": 1.7
+      },
+      "col": 27,
+      "row": 6,
+      "width": 1,
+      "height": 1,
+      "id": "PAL-003"
+    }
+  ],
+  "robots": [
+    {
+      "id": "R1",
+      "label": "AMR-01",
+      "col": 5,
+      "row": 4,
+      "state": "WAITING",
+      "battery": 17.7000000000004,
+      "speed": 1.4,
+      "currentTask": null,
+      "currentTaskId": null,
+      "taskPhase": null,
+      "pickupPoint": {
+        "col": 5,
+        "row": 4,
+        "label": "Storage-01"
+      },
+      "dropPoint": {
+        "col": 5,
+        "row": 4,
+        "label": "S1"
+      },
+      "path": [],
+      "recoveryStatus": "RECOVERED"
+    },
+    {
+      "id": "R2",
+      "label": "AMR-02",
+      "col": 26,
+      "row": 25,
+      "state": "WAITING",
+      "battery": 15.000000000000082,
+      "speed": 0,
+      "currentTask": null,
+      "currentTaskId": null,
+      "taskPhase": null,
+      "pickupPoint": null,
+      "dropPoint": null,
+      "path": []
+    },
+    {
+      "id": "R3",
+      "label": "AMR-03",
+      "col": 24,
+      "row": 25,
+      "state": "WAITING",
+      "battery": 48.30000000000048,
+      "speed": 0,
+      "currentTask": null,
+      "currentTaskId": null,
+      "taskPhase": null,
+      "pickupPoint": {
+        "col": 8,
+        "row": 25,
+        "label": "PICKUP A"
+      },
+      "dropPoint": {
+        "col": 24,
+        "row": 25,
+        "label": "DROP B"
+      },
+      "path": []
+    },
+    {
+      "posY": 0,
+      "rotX": 0,
+      "rotY": 0,
+      "rotZ": 0,
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "col": 4,
+      "row": 3,
+      "label": "AMR-04",
+      "state": "IDLE",
+      "battery": 19.900000000000613,
+      "speed": 1.2,
+      "currentTask": null,
+      "path": [],
+      "id": "R-004",
+      "currentTaskId": null,
+      "taskPhase": null,
+      "pickupPoint": {
+        "col": 8,
+        "row": 25,
+        "label": "PICKUP A"
+      },
+      "dropPoint": {
+        "col": 5,
+        "row": 4,
+        "label": "Storage-01"
+      },
+      "sensingRadius": 5,
+      "payloadCapacity": 20,
+      "currentLoad": 0,
+      "temperature": 35,
+      "signalStrength": 100,
+      "deliveryCapability": "Standard Transport"
+    },
+    {
+      "posY": 0,
+      "rotX": 0,
+      "rotY": 0,
+      "rotZ": 0,
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "col": 46,
+      "row": 10,
+      "label": "AMR-07",
+      "state": "WAITING",
+      "battery": 24.400000000000624,
+      "speed": 1.2,
+      "currentTask": null,
+      "path": [],
+      "assetUrl": "/assets/robot_love_death_and_robots.glb",
+      "id": "R-007",
+      "currentTaskId": null,
+      "taskPhase": null,
+      "pickupPoint": {
+        "col": 13,
+        "row": 14,
+        "label": "P3"
+      },
+      "dropPoint": {
+        "col": 46,
+        "row": 10,
+        "label": "DROP 3"
+      },
+      "sensingRadius": 5,
+      "payloadCapacity": 20,
+      "currentLoad": 0,
+      "temperature": 35,
+      "signalStrength": 100,
+      "deliveryCapability": "Standard Transport"
+    },
+    {
+      "posY": 0,
+      "rotX": 0,
+      "rotY": 0,
+      "rotZ": 0,
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "col": 46,
+      "row": 10,
+      "label": "AMR-07",
+      "state": "WAITING",
+      "battery": 49.00000000000048,
+      "speed": 1.2,
+      "currentTask": null,
+      "path": [],
+      "assetUrl": "/assets/robot_love_death_and_robots.glb",
+      "id": "R-009",
+      "currentTaskId": null,
+      "taskPhase": null,
+      "pickupPoint": {
+        "col": 43,
+        "row": 10,
+        "label": "PICKUP 6"
+      },
+      "dropPoint": {
+        "col": 46,
+        "row": 10,
+        "label": "DROP 3"
+      },
+      "sensingRadius": 5,
+      "payloadCapacity": 20,
+      "currentLoad": 0,
+      "temperature": 35,
+      "signalStrength": 100,
+      "deliveryCapability": "Standard Transport"
+    }
+  ],
+  "intersections": [
+    {
+      "id": "I1",
+      "col": 8,
+      "row": 11
+    },
+    {
+      "id": "I2",
+      "col": 16,
+      "row": 11
+    },
+    {
+      "id": "I3",
+      "col": 24,
+      "row": 11
+    },
+    {
+      "id": "I4",
+      "col": 8,
+      "row": 21
+    },
+    {
+      "id": "I5",
+      "col": 16,
+      "row": 21
+    },
+    {
+      "id": "I6",
+      "col": 24,
+      "row": 21
+    }
+  ],
+  "paths": [
+    {
+      "id": "P1",
+      "startId": "I1",
+      "endId": "I2"
+    },
+    {
+      "id": "P2",
+      "startId": "I2",
+      "endId": "I3"
+    },
+    {
+      "id": "P3",
+      "startId": "I4",
+      "endId": "I5"
+    },
+    {
+      "id": "P4",
+      "startId": "I5",
+      "endId": "I6"
+    },
+    {
+      "id": "P5",
+      "startId": "I1",
+      "endId": "I4"
+    },
+    {
+      "id": "P6",
+      "startId": "I2",
+      "endId": "I5"
+    },
+    {
+      "id": "P7",
+      "startId": "I3",
+      "endId": "I6"
+    }
+  ]
+}
