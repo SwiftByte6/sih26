@@ -283,26 +283,39 @@ export const WarehouseMap: React.FC = () => {
               <AmrRobot key={robot.id} robot={robot} />
             ))}
 
-            {activeCommLinks.filter((l) => l.to !== 'ALL' && l.to !== 'SYSTEM').map((link) => {
-              const fromRobot = robots.find((r) => r.id === link.from);
-              const toRobot = robots.find((r) => r.id === link.to);
-              if (!fromRobot || !toRobot) return null;
-              return (
-                <Line
-                  key={`${link.from}-${link.to}-${link.expires}`}
-                  points={[
-                    fromRobot.col * cellSize + cellSize / 2,
-                    fromRobot.row * cellSize + cellSize / 2,
-                    toRobot.col * cellSize + cellSize / 2,
-                    toRobot.row * cellSize + cellSize / 2,
-                  ]}
-                  stroke="#42BFE5"
-                  strokeWidth={1.5}
-                  opacity={0.6}
-                  dash={[6, 4]}
-                />
-              );
-            })}
+            {(() => {
+              const uniqueLinksMap = new Map<string, { from: string; to: string; expires: number }>();
+              activeCommLinks
+                .filter((l) => l.to !== 'ALL' && l.to !== 'SYSTEM' && l.from !== l.to)
+                .forEach((link) => {
+                  const pairKey = [link.from, link.to].sort().join('<->');
+                  const existing = uniqueLinksMap.get(pairKey);
+                  if (!existing || link.expires > existing.expires) {
+                    uniqueLinksMap.set(pairKey, link);
+                  }
+                });
+
+              return Array.from(uniqueLinksMap.entries()).map(([pairKey, link], idx) => {
+                const fromRobot = robots.find((r) => r.id === link.from);
+                const toRobot = robots.find((r) => r.id === link.to);
+                if (!fromRobot || !toRobot) return null;
+                return (
+                  <Line
+                    key={`comm-link-${pairKey}-${link.expires}-${idx}`}
+                    points={[
+                      fromRobot.col * cellSize + cellSize / 2,
+                      fromRobot.row * cellSize + cellSize / 2,
+                      toRobot.col * cellSize + cellSize / 2,
+                      toRobot.row * cellSize + cellSize / 2,
+                    ]}
+                    stroke="#42BFE5"
+                    strokeWidth={1.5}
+                    opacity={0.6}
+                    dash={[6, 4]}
+                  />
+                );
+              });
+            })()}
           </Layer>
         </Stage>
       )}
