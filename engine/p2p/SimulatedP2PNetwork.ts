@@ -389,8 +389,8 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
 
             // Fix 9: Audit ineligibility reasons on global taskStore ONLY for ineligible robots
             try {
-              const useTaskStore = require('../../store/taskStore').useTaskStore.getState;
-              const taskStore = useTaskStore();
+              const getTaskStoreState = require('../../store/taskStore').useTaskStore.getState;
+              const taskStore = getTaskStoreState();
               if (!evalResult.eligible && evalResult.ineligibilityReasons && evalResult.ineligibilityReasons.length > 0) {
                 taskStore.updateTaskIneligibilityAudit(task.task_id, targetNode.robotId, evalResult.ineligibilityReasons);
               } else if (evalResult.eligible) {
@@ -615,10 +615,10 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
         // Synchronize global taskStore & warehouseStore ownership ONLY if not already processed idempotently
         if (!wasAlreadyClaimed) {
           try {
-            const useTaskStore = require('../../store/taskStore').useTaskStore.getState;
-            const useWarehouseStore = require('../../store/warehouseStore').useWarehouseStore.getState;
+            const getTaskStoreState = require('../../store/taskStore').useTaskStore.getState;
+            const getWarehouseStoreState = require('../../store/warehouseStore').useWarehouseStore.getState;
             
-            const taskStore = useTaskStore();
+            const taskStore = getTaskStoreState();
             const globalTask = taskStore.getTask(taskId);
             const alreadyGloballyAssigned = globalTask && globalTask.assigned_robot_id === ownerRobotId && (globalTask.status === 'ASSIGNED' || globalTask.status === 'IN_PROGRESS');
 
@@ -626,7 +626,7 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
               console.log(`[P2P] assignment result triggering for ${taskId}`);
               taskStore.receiveAssignmentResult(taskId, ownerRobotId);
 
-              const warehouseStore = useWarehouseStore();
+              const warehouseStore = getWarehouseStoreState();
               const task = taskStore.getTask(taskId);
               if (task && task.handoverAudit?.originalRobotId) {
                 const executeHandoverAssignment = require('../recovery/TaskHandoverManager').executeHandoverAssignment;
