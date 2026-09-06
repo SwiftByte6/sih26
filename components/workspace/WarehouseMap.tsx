@@ -42,9 +42,11 @@ export const WarehouseMap: React.FC = () => {
   // Handle Spacebar for temporary pan mode
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) return;
       if (e.code === 'Space' && !e.repeat) {
+        e.preventDefault();
         setIsSpacePressed(true);
       }
     };
