@@ -72,7 +72,7 @@ export const BuilderObject3D: React.FC<Props> = ({
     const updates = {
       row: nextRow,
       col: nextCol,
-      posY: Math.max(0, pos.y),
+      posY: pos.y < 0.8 ? 0 : Math.max(0, pos.y),
       rotX: deg(group.rotation.x),
       rotY: deg(group.rotation.y),
       rotZ: deg(group.rotation.z),

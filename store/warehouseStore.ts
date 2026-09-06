@@ -27,6 +27,7 @@ import { clampAllToGrid, cloneLayout, robotsForPlay, validateLayout, LayoutValid
 
 import { useP2PStore } from './p2pStore';
 import { resolveTickCollisions, preemptivelyDeconflictTrajectories } from '../engine/coordination/CollisionCoordinator';
+import { autoRearrangeLayout } from '../engine/rearrangeLayout';
 import { resolveLocationCoordinates } from '../engine/evaluation/TaskEvaluator';
 
 export type Task = { id: string, targetRow: number, targetCol: number, assignedTo: string | null };
@@ -113,6 +114,28 @@ function loadPersistedLayout(): LayoutSnapshot | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as LayoutSnapshot;
     if (!parsed?.shelves || !parsed?.robots) return null;
+
+    // Migrate any legacy machine entries out of robots into obstacles
+    if (parsed.robots) {
+      const machineRobots = parsed.robots.filter((r) => r.assetUrl && (r.assetUrl.includes('machine') || r.assetUrl.includes('laser') || r.assetUrl.includes('industrial')));
+      if (machineRobots.length > 0) {
+        parsed.robots = parsed.robots.filter((r) => !machineRobots.includes(r));
+        const newObs: Obstacle[] = machineRobots.map((m, idx) => ({
+          id: `SYS-${idx + 1}`,
+          row: m.row,
+          col: m.col,
+          width: 2,
+          height: 2,
+          posY: m.posY ?? 0,
+          rotX: m.rotX ?? 0,
+          rotY: m.rotY ?? 0,
+          rotZ: m.rotZ ?? 0,
+          scale: m.scale ?? { x: 1, y: 1, z: 1 },
+          assetUrl: m.assetUrl,
+        }));
+        parsed.obstacles = [...(parsed.obstacles || []), ...newObs];
+      }
+    }
     return parsed;
   } catch {
     return null;
@@ -164,6 +187,21 @@ interface WarehouseState {
   showSensors: boolean;
   validationIssues: LayoutValidationIssue[];
   savedLayout: LayoutSnapshot;
+  activeTool: 'select' | 'pan';
+  setActiveTool: (tool: 'select' | 'pan') => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
+  zoomFit: () => void;
+  historyStack: LayoutSnapshot[];
+  historyIndex: number;
+  undo: () => void;
+  redo: () => void;
+  isManageRobotsOpen: boolean;
+  manageRobotsSelectedRobotId: string | null;
+  openManageRobots: (robotId?: string | null) => void;
+  closeManageRobots: () => void;
+  selectRobotForManagement: (robotId: string | null) => void;
+  rearrangeLayout: () => void;
 
   setSelectedItem: (id: string | null, type: SelectedItemType) => void;
   toggleSimulation: () => void;
@@ -234,8 +272,13 @@ function clampMove(
 
 export const useWarehouseStore = create<WarehouseState>((set, get) => ({
   viewMode: '2D',
-  appMode: 'BUILDER',
+  appMode: 'PLAY',
   transformMode: 'translate',
+  activeTool: 'select',
+  historyStack: [initialLayout],
+  historyIndex: 0,
+  isManageRobotsOpen: false,
+  manageRobotsSelectedRobotId: null,
   pendingPlaceType: null,
   pendingAssetUrl: null,
   simSpeed: 1,
@@ -287,7 +330,12 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
       set({ appMode: 'PLAY', pendingPlaceType: null, pendingAssetUrl: null, selectedItemId: null, selectedItemType: null });
     } else {
       if (typeof window !== 'undefined') {
-        alert('Cannot switch to PLAY mode. Layout has errors:\n' + result.issues.filter(i=>i.severity==='error').map(i=>'- ' + i.message).join('\n'));
+        const errMsg = 'Cannot switch to PLAY mode. Layout has errors:\n' + result.issues.filter(i=>i.severity==='error').map(i=>'- ' + i.message).join('\n');
+        const doAutoFix = window.confirm(errMsg + '\n\nWould you like to Auto-Rearrange the layout now to fix all overlaps and trapped robots?');
+        if (doAutoFix) {
+          get().rearrangeLayout();
+          set({ appMode: 'PLAY', pendingPlaceType: null, pendingAssetUrl: null, selectedItemId: null, selectedItemType: null });
+        }
       }
     }
   },
@@ -306,7 +354,13 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
       const result = get().applyLayout();
       if (!result.ok) {
         if (typeof window !== 'undefined') {
-          alert('Cannot run simulation. Layout has errors:\n' + result.issues.filter(i=>i.severity==='error').map(i=>'- ' + i.message).join('\n'));
+          const errMsg = 'Cannot run simulation. Layout has errors:\n' + result.issues.filter(i=>i.severity==='error').map(i=>'- ' + i.message).join('\n');
+          const doAutoFix = window.confirm(errMsg + '\n\nWould you like to Auto-Rearrange the layout now to fix all overlaps and trapped robots?');
+          if (doAutoFix) {
+            get().rearrangeLayout();
+            set({ appMode: 'PLAY', isRunning: true, pendingPlaceType: null, pendingAssetUrl: null });
+            return;
+          }
         }
         return;
       }
@@ -343,6 +397,67 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
   },
   setScale: (scale) => set({ scale }),
   setPan: (pan) => set({ pan }),
+  setActiveTool: (tool) => set({ activeTool: tool, pendingPlaceType: null }),
+  zoomIn: () => set((state) => ({ scale: Math.min(3.0, Number((state.scale + 0.2).toFixed(2))) })),
+  zoomOut: () => set((state) => ({ scale: Math.max(0.3, Number((state.scale - 0.2).toFixed(2))) })),
+  zoomFit: () => set({ scale: 1, pan: { x: 0, y: 0 } }),
+  undo: () => set((state) => {
+    if (state.historyIndex <= 0) return {};
+    const prevIdx = state.historyIndex - 1;
+    const snap = state.historyStack[prevIdx];
+    const cloned = cloneLayout(snap);
+    return {
+      historyIndex: prevIdx,
+      robots: cloned.robots,
+      shelves: cloned.shelves,
+      obstacles: cloned.obstacles,
+      pois: cloned.pois,
+      pallets: cloned.pallets,
+      walls: cloned.walls,
+      gridRows: snap.gridRows,
+      gridCols: snap.gridCols,
+    };
+  }),
+  redo: () => set((state) => {
+    if (state.historyIndex >= state.historyStack.length - 1) return {};
+    const nextIdx = state.historyIndex + 1;
+    const snap = state.historyStack[nextIdx];
+    const cloned = cloneLayout(snap);
+    return {
+      historyIndex: nextIdx,
+      robots: cloned.robots,
+      shelves: cloned.shelves,
+      obstacles: cloned.obstacles,
+      pois: cloned.pois,
+      pallets: cloned.pallets,
+      walls: cloned.walls,
+      gridRows: snap.gridRows,
+      gridCols: snap.gridCols,
+    };
+  }),
+  openManageRobots: (robotId = null) => set({ isManageRobotsOpen: true, manageRobotsSelectedRobotId: robotId }),
+  closeManageRobots: () => set({ isManageRobotsOpen: false }),
+  selectRobotForManagement: (robotId) => set({ manageRobotsSelectedRobotId: robotId }),
+  rearrangeLayout: () => {
+    const state = get();
+    const result = autoRearrangeLayout({
+      gridRows: state.gridRows,
+      gridCols: state.gridCols,
+      shelves: state.shelves,
+      obstacles: state.obstacles,
+      pois: state.pois,
+      pallets: state.pallets,
+      robots: state.robots,
+    });
+    set({
+      shelves: result.shelves,
+      obstacles: result.obstacles,
+      pallets: result.pallets,
+      robots: result.robots,
+      pois: result.pois,
+    });
+    get().applyLayout();
+  },
   toggleGrid: () => set((state) => ({ showGrid: !state.showGrid })),
 
   setWarehouseSize: (cols, rows) => set((state) => {
@@ -370,7 +485,10 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
   })),
 
   addObstacle: (obs) => set((state) => {
-    const nextId = nextPrefixedId('OBS', state.obstacles.map((o) => o.id));
+    const isMachine = obs.assetUrl && (obs.assetUrl.includes('machine') || obs.assetUrl.includes('laser') || obs.assetUrl.includes('industrial'));
+    const prefix = isMachine ? 'SYS' : 'OBS';
+    const obsId = (obs as Partial<Obstacle>).id;
+    const nextId = obsId || nextPrefixedId(prefix, state.obstacles.map((o) => o.id));
     const pos = clampMove(obs.row, obs.col, obs.width, obs.height, state);
     const newObstacle = { ...DEFAULT_TRANSFORM, ...obs, ...pos, id: nextId };
     return {
@@ -419,7 +537,12 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
 
   addRobot: (robot) => set((state) => {
     const nextId = robot.id || nextPrefixedId('R', state.robots.map((r) => r.id));
-    const pos = clampMove(robot.row ?? 10, robot.col ?? 10, 1, 1, state);
+    const centerRow = Math.floor(state.gridRows / 2);
+    const centerCol = Math.floor(state.gridCols / 2);
+    const countOffset = (state.robots.length % 6) * 2;
+    const defaultRow = centerRow + Math.floor(countOffset / 3);
+    const defaultCol = centerCol + (countOffset % 3);
+    const pos = clampMove(robot.row ?? defaultRow, robot.col ?? defaultCol, 1, 1, state);
     const created: Robot = {
       ...DEFAULT_TRANSFORM,
       ...robot,
@@ -626,6 +749,7 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
         speed: 1.2,
         currentTask: null,
         path: [],
+        assetUrl: assetUrl || state.pendingAssetUrl || undefined,
       });
     } else if (type === 'PICKUP' || type === 'DROP' || type === 'CHARGER') {
       const n =

@@ -29,10 +29,25 @@ export const WarehouseWorkspace: React.FC = () => {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        const tag = (e.target as HTMLElement)?.tagName;
-        if (tag === 'INPUT' || tag === 'TEXTAREA') return;
         deleteSelected();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          useWarehouseStore.getState().redo();
+        } else {
+          useWarehouseStore.getState().undo();
+        }
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+        e.preventDefault();
+        useWarehouseStore.getState().redo();
+      } else if (e.key === '+' || e.key === '=') {
+        useWarehouseStore.getState().zoomIn();
+      } else if (e.key === '-') {
+        useWarehouseStore.getState().zoomOut();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -80,7 +95,12 @@ export const WarehouseWorkspace: React.FC = () => {
     if (pointerX < 0 || pointerY < 0 || pointerX > rect.width || pointerY > rect.height) return;
     const { cellSize, viewMode: vm } = useWarehouseStore.getState();
     if (vm === '3D') {
-      placeAtCell(type, 10, 10, assetUrl);
+      const colPercent = pointerX / rect.width;
+      const rowPercent = pointerY / rect.height;
+      const { gridCols, gridRows } = useWarehouseStore.getState();
+      const col = Math.max(0, Math.min(gridCols - 1, Math.floor(colPercent * gridCols)));
+      const row = Math.max(0, Math.min(gridRows - 1, Math.floor(rowPercent * gridRows)));
+      placeAtCell(type, row, col, assetUrl);
       return;
     }
     const worldX = (pointerX - pan.x) / scale;

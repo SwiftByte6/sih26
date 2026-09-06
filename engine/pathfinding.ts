@@ -102,6 +102,10 @@ export function findPathAStar(
   endCol: number,
   avoidCells?: Set<string>
 ): { row: number; col: number }[] {
+  if (startRow === endRow && startCol === endCol) {
+    return [{ row: endRow, col: endCol }];
+  }
+
   let actualStart = { row: startRow, col: startCol };
   if (!isWalkable(state, startRow, startCol)) {
     const fallbackStart = findNearestWalkableCell(state, startRow, startCol);
@@ -122,6 +126,10 @@ export function findPathAStar(
       if (fallbackEndNoAvoid) actualEnd = fallbackEndNoAvoid;
       else return [];
     }
+  }
+
+  if (actualStart.row === actualEnd.row && actualStart.col === actualEnd.col) {
+    return [{ row: actualStart.row, col: actualStart.col }];
   }
 
   const openSet = new Set<string>();
@@ -238,10 +246,10 @@ function heuristic(r1: number, c1: number, r2: number, c2: number): number {
 
 function getNeighbors(row: number, col: number) {
   return [
-    { row: row - 1, col }, // up
-    { row: row + 1, col }, // down
-    { row, col: col - 1 }, // left
-    { row, col: col + 1 }, // right
+    { row: row - 1, col },
+    { row: row + 1, col },
+    { row, col: col - 1 },
+    { row, col: col + 1 },
   ];
 }
 

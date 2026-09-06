@@ -1,14 +1,19 @@
 'use client';
 
 import React from 'react';
-import { Group, Rect, Text } from 'react-konva';
+import { Group, Rect, Text, Image as KonvaImage } from 'react-konva';
 import { Pallet } from '../../types/warehouse';
 import { useWarehouseStore } from '../../store/warehouseStore';
+import { useSvgImage } from '../../lib/useSvgImage';
 
 export const Pallet2D: React.FC<{ pallet: Pallet }> = ({ pallet }) => {
   const { selectedItemId, setSelectedItem, updatePallet, cellSize, appMode } = useWarehouseStore();
+  const palletImg = useSvgImage('/assets/warehouse/pallet.svg');
+  const boxImg = useSvgImage('/assets/warehouse/box.svg');
   const isSelected = selectedItemId === pallet.id;
   const builder = appMode === 'BUILDER';
+  const w = pallet.width * cellSize;
+  const h = pallet.height * cellSize;
 
   return (
     <Group
@@ -25,23 +30,17 @@ export const Pallet2D: React.FC<{ pallet: Pallet }> = ({ pallet }) => {
       onClick={() => setSelectedItem(pallet.id, 'PALLET')}
       onTap={() => setSelectedItem(pallet.id, 'PALLET')}
     >
-      <Rect
-        width={pallet.width * cellSize}
-        height={pallet.height * cellSize}
-        fill="#c4a574"
-        stroke={isSelected ? '#008CC9' : '#8a6a3d'}
-        strokeWidth={isSelected ? 3 : 1}
-      />
-      <Text
-        text="PALLET"
-        width={pallet.width * cellSize}
-        height={pallet.height * cellSize}
-        align="center"
-        verticalAlign="middle"
-        fill="#3f2d14"
-        fontSize={8}
-        fontStyle="bold"
-      />
+      {isSelected && (
+        <Rect x={-2} y={-2} width={w + 4} height={h + 4} stroke="#42BFE5" strokeWidth={2} dash={[4, 4]} />
+      )}
+      {palletImg ? (
+        <KonvaImage image={palletImg} width={w} height={h} />
+      ) : (
+        <Rect width={w} height={h} fill="#30363A" stroke="#454C50" strokeWidth={1} />
+      )}
+      {boxImg && (
+        <KonvaImage image={boxImg} x={w * 0.15} y={h * 0.15} width={w * 0.7} height={h * 0.7} />
+      )}
     </Group>
   );
 };
