@@ -63,17 +63,6 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
     this.nodes.delete(robotId);
     this.nodes.forEach((node) => {
       delete node.peerList[robotId];
-      if (node.knownTasks) {
-        Object.values(node.knownTasks).forEach((tk) => {
-          if (tk.peerBids) delete tk.peerBids[robotId];
-          if (tk.peerProposals) delete tk.peerProposals[robotId];
-          if (tk.claimedBy === robotId) {
-            tk.claimedBy = null;
-            tk.status = 'PENDING';
-            tk.allocationState = 'ANNOUNCED';
-          }
-        });
-      }
     });
   }
 
@@ -89,27 +78,6 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
       sender.stats.messagesSent++;
       if (message.type === 'HEARTBEAT') {
         sender.lastHeartbeatSent = message.timestamp;
-      }
-      if (message.type === 'TASK_BID' && message.payload?.taskId) {
-        const tk = sender.knownTasks?.[message.payload.taskId];
-        if (tk) {
-          tk.peerBids = tk.peerBids || {};
-          tk.peerBids[sender.robotId] = {
-            robotId: sender.robotId,
-            timestamp: message.timestamp,
-            eligible: message.payload.eligible ?? true,
-            suitabilityScore: message.payload.suitabilityScore ?? 0,
-            evaluation: message.payload.evaluation,
-          };
-        }
-      }
-      if (message.type === 'TASK_CLAIMED' && message.payload?.taskId) {
-        const tk = sender.knownTasks?.[message.payload.taskId];
-        if (tk) {
-          tk.claimedBy = message.payload.ownerRobotId;
-          tk.status = 'CLAIMED';
-          tk.allocationState = 'CLAIMED';
-        }
       }
     }
 
@@ -519,7 +487,7 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
               timestamp: message.timestamp,
             };
 
-            // Fix 5: Asynchronous consensus check with majority fallback & tie breaking
+            // Fix 5: Asynchronous consensus check
             const warehouseStoreState = require('../../store/warehouseStore').useWarehouseStore.getState();
             const onlineNodesCount = Array.from(this.nodes.values()).filter((n) => {
               if (!n.isOnline) return false;
@@ -530,44 +498,19 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
             const proposals = Object.values(taskKnowledge.peerProposals);
             const expectedProposalsCount = Math.max(1, onlineNodesCount);
 
-            // Tally proposal votes
-            const proposalCounts: Record<string, number> = {};
-            proposals.forEach((p) => {
-              if (p.proposedWinnerId) {
-                proposalCounts[p.proposedWinnerId] = (proposalCounts[p.proposedWinnerId] || 0) + 1;
-              }
-            });
+            const unanimousConsensus = proposals.length >= expectedProposalsCount && proposals.every((p) => p.proposedWinnerId === proposedWinnerId);
+            console.log(`[P2P] consensus check by ${targetNode.robotId} for ${taskId}: proposals=${proposals.length}/${expectedProposalsCount} unanimous=${unanimousConsensus}`);
 
-            let consensusWinner: string | null = null;
-            if (proposals.length >= expectedProposalsCount && Object.keys(proposalCounts).length > 0) {
-              const sortedCandidates = Object.keys(proposalCounts).sort((a, b) => {
-                if (proposalCounts[b] !== proposalCounts[a]) {
-                  return proposalCounts[b] - proposalCounts[a];
-                }
-                return a.localeCompare(b);
-              });
-
-              const topCandidate = sortedCandidates[0];
-              const topVotes = proposalCounts[topCandidate];
-              const majorityThreshold = Math.ceil(expectedProposalsCount / 2);
-
-              if (topVotes >= majorityThreshold) {
-                consensusWinner = topCandidate;
-              }
-            }
-
-            console.log(`[P2P] consensus check by ${targetNode.robotId} for ${taskId}: proposals=${proposals.length}/${expectedProposalsCount} winner=${consensusWinner}`);
-
-            if (consensusWinner && !taskKnowledge.claimedBy) {
+            if (unanimousConsensus && !taskKnowledge.claimedBy) {
               taskKnowledge.allocationState = 'CONSENSUS';
 
               // Peer nodes agree with candidate winner and send directed CONSENSUS ACCEPT
-              if (targetNode.robotId !== consensusWinner && !taskKnowledge.myConsensusSent) {
+              if (targetNode.robotId !== proposedWinnerId && !taskKnowledge.myConsensusSent) {
                 taskKnowledge.myConsensusSent = true;
                 setTimeout(() => {
-                  this.sendDirectMessage(targetNode.robotId, consensusWinner!, 'CONSENSUS', {
+                  this.sendDirectMessage(targetNode.robotId, proposedWinnerId!, 'CONSENSUS', {
                     taskId,
-                    proposedWinnerId: consensusWinner,
+                    proposedWinnerId: proposedWinnerId,
                     allocationRound: taskKnowledge.allocationRound || 1,
                     body: `CONSENSUS: ${taskId} | ACCEPT`,
                   });
@@ -578,17 +521,17 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
               const myRobot = warehouseStoreState.robots.find((r: any) => r.id === targetNode.robotId);
               const isFreeToClaim = myRobot && (myRobot.state === 'WAITING' || myRobot.state === 'IDLE') && !myRobot.currentTask && !myRobot.currentTaskId;
 
-              if (targetNode.robotId === consensusWinner && isFreeToClaim) {
+              if (targetNode.robotId === proposedWinnerId && isFreeToClaim) {
                 console.log(`[P2P] task claimed by ${targetNode.robotId} for ${taskId}`);
-                taskKnowledge.claimedBy = consensusWinner;
+                taskKnowledge.claimedBy = proposedWinnerId;
                 taskKnowledge.status = 'CLAIMED';
                 taskKnowledge.allocationState = 'CLAIMED';
                 setTimeout(() => {
                   this.broadcastMessage(targetNode.robotId, 'TASK_CLAIMED', {
                     taskId,
-                    ownerRobotId: consensusWinner,
+                    ownerRobotId: proposedWinnerId,
                     allocationRound: taskKnowledge.allocationRound || 1,
-                    body: `TASK_CLAIMED: Task ${taskId} claimed by ${consensusWinner} via P2P Consensus (Round ${taskKnowledge.allocationRound || 1})!`,
+                    body: `TASK_CLAIMED: Task ${taskId} claimed by ${proposedWinnerId} via P2P Consensus (Round ${taskKnowledge.allocationRound || 1})!`,
                   });
                 }, 0);
               }
@@ -597,7 +540,7 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
         }
       }
 
-      // Handle TASK_CLAIMED: Synchronize local & global task ownership (Idempotent)
+      // Handle TASK_CLAIMED: Synchronize local & global task ownership
       if (message.type === 'TASK_CLAIMED' && message.payload?.taskId) {
         const taskId = message.payload.taskId;
         const ownerRobotId = message.payload.ownerRobotId;

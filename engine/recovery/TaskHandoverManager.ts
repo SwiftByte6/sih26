@@ -94,9 +94,14 @@ export function executeHandoverAssignment(
       currentTaskId: null,
       taskPhase: null,
       path: [],
-      state: isBatteryIssue ? 'CHARGING' : 'WAITING',
+      state: 'WAITING',
       recoveryStatus: 'NONE',
     });
+    if (isBatteryIssue) {
+      setTimeout(() => {
+        warehouseStore.sendRobotToCharger(originalRobotId);
+      }, 0);
+    }
   }
 
   // 2. Assign replacement AMR

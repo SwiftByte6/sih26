@@ -23,6 +23,9 @@ export const WarehouseMap: React.FC = () => {
   const [size, setSize] = useState({ width: 800, height: 600 });
   const [isDraggingStage, setIsDraggingStage] = useState(false);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
+  const [isSpacePressed, setIsSpacePressed] = useState(false);
+  const [isMouseDown, setIsMouseDown] = useState(false);
+  const [isMiddleMouseDown, setIsMiddleMouseDown] = useState(false);
 
   const bgPng = useSvgImage('/warehouse/warehose-background.png');
   const bgAssetPng = useSvgImage('/assets/warehouse/warehose-background.png');
@@ -45,16 +48,69 @@ export const WarehouseMap: React.FC = () => {
       const target = e.target as HTMLElement | null;
       const tag = target?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) return;
+  // Figma-style keyboard shortcuts & navigation
+  useEffect(() => {
+    const isEditingText = () => {
+      const active = document.activeElement;
+      if (!active) return false;
+      const tag = active.tagName.toLowerCase();
+      return tag === 'input' || tag === 'textarea' || tag === 'select' || (active as HTMLElement).isContentEditable;
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (isEditingText()) return;
+
       if (e.code === 'Space' && !e.repeat) {
         e.preventDefault();
         setIsSpacePressed(true);
       }
     };
+
+      // Figma Zoom shortcuts: Ctrl + '+' / '-' / '0'
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === '=' || e.key === '+') {
+          e.preventDefault();
+          zoomIn();
+        } else if (e.key === '-') {
+          e.preventDefault();
+          zoomOut();
+        } else if (e.key === '0') {
+          e.preventDefault();
+          zoomFit();
+        }
+      }
+
+      // Figma View shortcuts: Shift + 1 (Fit View), Shift + 0 (Reset 100%)
+      if (e.shiftKey) {
+        if (e.key === '1' || e.code === 'Digit1') {
+          e.preventDefault();
+          zoomFit();
+        } else if (e.key === '0' || e.code === 'Digit0') {
+          e.preventDefault();
+          setPan({ x: 40, y: 40 });
+          setScale(1);
+        }
+      }
+
+      // Arrow keys & WASD canvas panning
+      const step = 40;
+      if (e.code === 'ArrowLeft' || (e.code === 'KeyA' && !e.ctrlKey && !e.metaKey)) {
+        setPan({ x: pan.x + step, y: pan.y });
+      } else if (e.code === 'ArrowRight' || (e.code === 'KeyD' && !e.ctrlKey && !e.metaKey)) {
+        setPan({ x: pan.x - step, y: pan.y });
+      } else if (e.code === 'ArrowUp' || (e.code === 'KeyW' && !e.ctrlKey && !e.metaKey)) {
+        setPan({ x: pan.x, y: pan.y + step });
+      } else if (e.code === 'ArrowDown' || (e.code === 'KeyS' && !e.ctrlKey && !e.metaKey)) {
+        setPan({ x: pan.x, y: pan.y - step });
+      }
+    };
+
     const handleKeyUp = (e: KeyboardEvent) => {
       if (e.code === 'Space') {
         setIsSpacePressed(false);
       }
     };
+
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
     return () => {
@@ -62,6 +118,7 @@ export const WarehouseMap: React.FC = () => {
       window.removeEventListener('keyup', handleKeyUp);
     };
   }, []);
+  }, [pan, zoomIn, zoomOut, zoomFit, setPan, setScale]);
 
   const gridLines = [];
   if (showGrid) {
@@ -105,6 +162,7 @@ export const WarehouseMap: React.FC = () => {
     if (appMode === 'PLAY') return 'grab';
     return 'default';
   };
+  const isPanActive = activeTool === 'pan' || isSpacePressed || isMiddleMouseDown;
 
   return (
     <div ref={containerRef} className="w-full h-full bg-[#e2e8f0] overflow-hidden relative select-none">
@@ -122,21 +180,21 @@ export const WarehouseMap: React.FC = () => {
         <div className="w-px h-4 bg-border mx-0.5" />
         <button
           onClick={zoomIn}
-          title="Zoom In (+)"
+          title="Zoom In (Ctrl + / =)"
           className="p-1.5 text-text hover:text-accent hover:bg-app rounded-sm transition-colors"
         >
           <ZoomIn size={16} />
         </button>
         <button
           onClick={zoomOut}
-          title="Zoom Out (-)"
+          title="Zoom Out (Ctrl -)"
           className="p-1.5 text-text hover:text-accent hover:bg-app rounded-sm transition-colors"
         >
           <ZoomOut size={16} />
         </button>
         <button
           onClick={zoomFit}
-          title="Fit Map to View"
+          title="Fit Map to View (Shift 1)"
           className="p-1.5 text-text hover:text-accent hover:bg-app rounded-sm transition-colors"
         >
           <Maximize2 size={16} />
@@ -146,7 +204,7 @@ export const WarehouseMap: React.FC = () => {
             setPan({ x: 40, y: 40 });
             setScale(1);
           }}
-          title="Reset View"
+          title="Reset View (Shift 0)"
           className="p-1.5 text-text hover:text-accent hover:bg-app rounded-sm transition-colors border-l border-border pl-2"
         >
           <RotateCcw size={16} />
@@ -167,6 +225,7 @@ export const WarehouseMap: React.FC = () => {
           style={{
             background: '#e2e8f0',
             cursor: getCursor(),
+            cursor: isPanActive ? (isMouseDown ? 'grabbing' : 'grab') : 'default',
           }}
           scale={{ x: scale, y: scale }}
           x={pan.x}
@@ -177,14 +236,31 @@ export const WarehouseMap: React.FC = () => {
               setIsDraggingStage(true);
             }
           }}
+          draggable={isPanActive}
+          onMouseDown={(e) => {
+            setIsMouseDown(true);
+            if (e.evt.button === 1) {
+              e.evt.preventDefault();
+              setIsMiddleMouseDown(true);
+            }
+          }}
+          onMouseUp={() => {
+            setIsMouseDown(false);
+            setIsMiddleMouseDown(false);
+          }}
           onDragEnd={(e) => {
             if (e.target === e.target.getStage()) {
               setIsDraggingStage(false);
               setPan({ x: e.target.x(), y: e.target.y() });
+              setIsMouseDown(false);
             }
           }}
           onWheel={(e) => {
             e.evt.preventDefault();
+            if (e.evt.shiftKey && !e.evt.ctrlKey) {
+              setPan({ x: pan.x - e.evt.deltaY, y: pan.y - e.evt.deltaX });
+              return;
+            }
             const scaleBy = 1.08;
             const stage = e.target.getStage();
             if (!stage) return;
@@ -381,6 +457,39 @@ export const WarehouseMap: React.FC = () => {
                 />
               );
             })}
+            {(() => {
+              const uniqueLinksMap = new Map<string, { from: string; to: string; expires: number }>();
+              activeCommLinks
+                .filter((l) => l.to !== 'ALL' && l.to !== 'SYSTEM' && l.from !== l.to)
+                .forEach((link) => {
+                  const pairKey = [link.from, link.to].sort().join('<->');
+                  const existing = uniqueLinksMap.get(pairKey);
+                  if (!existing || link.expires > existing.expires) {
+                    uniqueLinksMap.set(pairKey, link);
+                  }
+                });
+
+              return Array.from(uniqueLinksMap.entries()).map(([pairKey, link], idx) => {
+                const fromRobot = robots.find((r) => r.id === link.from);
+                const toRobot = robots.find((r) => r.id === link.to);
+                if (!fromRobot || !toRobot) return null;
+                return (
+                  <Line
+                    key={`comm-link-${pairKey}-${link.expires}-${idx}`}
+                    points={[
+                      fromRobot.col * cellSize + cellSize / 2,
+                      fromRobot.row * cellSize + cellSize / 2,
+                      toRobot.col * cellSize + cellSize / 2,
+                      toRobot.row * cellSize + cellSize / 2,
+                    ]}
+                    stroke="#42BFE5"
+                    strokeWidth={1.5}
+                    opacity={0.6}
+                    dash={[6, 4]}
+                  />
+                );
+              });
+            })()}
           </Layer>
         </Stage>
       )}

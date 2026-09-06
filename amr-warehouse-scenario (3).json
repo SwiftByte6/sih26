@@ -205,23 +205,6 @@
     {
       "posY": 0,
       "rotX": 0,
-      "rotY": 0,
-      "rotZ": 0,
-      "scale": {
-        "x": 1,
-        "y": 1,
-        "z": 1
-      },
-      "col": 36,
-      "row": 10,
-      "width": 2,
-      "height": 2,
-      "assetUrl": "/assets/electric_vehicle_charging_point_trydan.glb",
-      "id": "OBS-004"
-    },
-    {
-      "posY": 0,
-      "rotX": 0,
       "rotY": 180,
       "rotZ": 0,
       "scale": {
@@ -235,23 +218,6 @@
       "height": 2,
       "assetUrl": "/assets/worn_warehouse_shelf.glb",
       "id": "OBS-006"
-    },
-    {
-      "posY": 0,
-      "rotX": 0,
-      "rotY": 0,
-      "rotZ": 0,
-      "scale": {
-        "x": 1,
-        "y": 1,
-        "z": 1
-      },
-      "col": 10,
-      "row": 7,
-      "width": 2,
-      "height": 2,
-      "assetUrl": "/assets/electric_vehicle_charging_point_trydan.glb",
-      "id": "OBS-007"
     },
     {
       "posY": 0,
@@ -424,7 +390,7 @@
       "row": 38,
       "label": "CHARGER 1",
       "posY": 0,
-      "rotY": 0,
+      "rotY": 180,
       "scale": {
         "x": 1.3,
         "y": 1.3,
@@ -497,6 +463,20 @@
       "type": "DROP",
       "label": "DROP 3",
       "id": "POI-010"
+    },
+    {
+      "posY": 0,
+      "rotY": 180,
+      "scale": {
+        "x": 1.3,
+        "y": 1.3,
+        "z": 1.3
+      },
+      "col": 30,
+      "row": 38,
+      "type": "CHARGER",
+      "label": "CHARGER 2",
+      "id": "POI-011"
     }
   ],
   "pallets": [
@@ -577,24 +557,16 @@
     {
       "id": "R2",
       "label": "AMR-02",
-      "col": 24,
-      "row": 25,
+      "col": 26,
+      "row": 23,
       "state": "WAITING",
       "battery": 15.000000000000082,
       "speed": 0,
       "currentTask": null,
       "currentTaskId": null,
       "taskPhase": null,
-      "pickupPoint": {
-        "col": 8,
-        "row": 25,
-        "label": "PICKUP A"
-      },
-      "dropPoint": {
-        "col": 24,
-        "row": 25,
-        "label": "DROP B"
-      },
+      "pickupPoint": null,
+      "dropPoint": null,
       "path": []
     },
     {
@@ -865,7 +837,7 @@
         "y": 1,
         "z": 1
       },
-      "col": 24,
+      "col": 28,
       "row": 25,
       "label": "AMR-07",
       "state": "WAITING",
@@ -877,16 +849,8 @@
       "id": "R-009",
       "currentTaskId": null,
       "taskPhase": null,
-      "pickupPoint": {
-        "col": 8,
-        "row": 25,
-        "label": "PICKUP A"
-      },
-      "dropPoint": {
-        "col": 24,
-        "row": 25,
-        "label": "DROP B"
-      },
+      "pickupPoint": null,
+      "dropPoint": null,
       "sensingRadius": 5,
       "payloadCapacity": 20,
       "currentLoad": 0,
