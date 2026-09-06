@@ -23,7 +23,6 @@ export const WarehouseMap: React.FC = () => {
   const [size, setSize] = useState({ width: 800, height: 600 });
   const [isDraggingStage, setIsDraggingStage] = useState(false);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
-  const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [isMouseDown, setIsMouseDown] = useState(false);
   const [isMiddleMouseDown, setIsMiddleMouseDown] = useState(false);
 
@@ -42,12 +41,6 @@ export const WarehouseMap: React.FC = () => {
     return () => ro.disconnect();
   }, []);
 
-  // Handle Spacebar for temporary pan mode
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      const tag = target?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) return;
   // Figma-style keyboard shortcuts & navigation
   useEffect(() => {
     const isEditingText = () => {
@@ -64,7 +57,6 @@ export const WarehouseMap: React.FC = () => {
         e.preventDefault();
         setIsSpacePressed(true);
       }
-    };
 
       // Figma Zoom shortcuts: Ctrl + '+' / '-' / '0'
       if (e.ctrlKey || e.metaKey) {
@@ -117,7 +109,6 @@ export const WarehouseMap: React.FC = () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, []);
   }, [pan, zoomIn, zoomOut, zoomFit, setPan, setScale]);
 
   const gridLines = [];
@@ -152,17 +143,16 @@ export const WarehouseMap: React.FC = () => {
   const mapH = gridRows * cellSize;
 
   const isPlacing = appMode === 'BUILDER' && Boolean(pendingPlaceType);
-  const isPanActive = activeTool === 'pan' || isSpacePressed;
-  const canDragStage = !isPlacing;
+  const isPanActive = activeTool === 'pan' || isSpacePressed || isMiddleMouseDown;
+  const canDragStage = !isPlacing && isPanActive;
 
   const getCursor = () => {
-    if (isDraggingStage) return 'grabbing';
+    if (isDraggingStage || (isPanActive && isMouseDown)) return 'grabbing';
     if (isPlacing) return 'crosshair';
     if (isPanActive) return 'grab';
     if (appMode === 'PLAY') return 'grab';
     return 'default';
   };
-  const isPanActive = activeTool === 'pan' || isSpacePressed || isMiddleMouseDown;
 
   return (
     <div ref={containerRef} className="w-full h-full bg-[#e2e8f0] overflow-hidden relative select-none">
@@ -225,7 +215,6 @@ export const WarehouseMap: React.FC = () => {
           style={{
             background: '#e2e8f0',
             cursor: getCursor(),
-            cursor: isPanActive ? (isMouseDown ? 'grabbing' : 'grab') : 'default',
           }}
           scale={{ x: scale, y: scale }}
           x={pan.x}
@@ -236,7 +225,6 @@ export const WarehouseMap: React.FC = () => {
               setIsDraggingStage(true);
             }
           }}
-          draggable={isPanActive}
           onMouseDown={(e) => {
             setIsMouseDown(true);
             if (e.evt.button === 1) {
