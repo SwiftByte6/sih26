@@ -71,13 +71,13 @@ function ModeViewToggles() {
 
 const TOOLBAR_GROUPS = [
   [
-    { icon: MousePointer2, label: 'Select', tooltip: 'Select Tool (Pointer)' },
-    { icon: Move, label: 'Pan', tooltip: 'Pan Tool (Drag Canvas)' },
+    { icon: MousePointer2, label: 'Select', tooltip: 'Select Tool (V)' },
+    { icon: Move, label: 'Pan', tooltip: 'Pan / Drag Map (H or hold Space)' },
   ],
   [
-    { icon: ZoomIn, label: 'Zoom +', tooltip: 'Zoom In (+20%)' },
-    { icon: ZoomOut, label: 'Zoom -', tooltip: 'Zoom Out (-20%)' },
-    { icon: Maximize, label: 'Fit', tooltip: 'Reset / Fit View' },
+    { icon: ZoomIn, label: 'Zoom +', tooltip: 'Zoom In (+ / =)' },
+    { icon: ZoomOut, label: 'Zoom -', tooltip: 'Zoom Out (-)' },
+    { icon: Maximize, label: 'Fit', tooltip: 'Fit Map to View (F)' },
   ],
   [
     { icon: Grid3X3, label: 'Grid', tooltip: 'Toggle Grid Overlay' },

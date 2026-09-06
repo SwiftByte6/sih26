@@ -48,6 +48,12 @@ export const WarehouseWorkspace: React.FC = () => {
         useWarehouseStore.getState().zoomIn();
       } else if (e.key === '-') {
         useWarehouseStore.getState().zoomOut();
+      } else if (e.key === 'h' || e.key === 'H') {
+        useWarehouseStore.getState().setActiveTool('pan');
+      } else if (e.key === 'v' || e.key === 'V') {
+        useWarehouseStore.getState().setActiveTool('select');
+      } else if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey) {
+        useWarehouseStore.getState().zoomFit();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
