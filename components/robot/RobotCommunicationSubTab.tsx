@@ -149,9 +149,14 @@ export const RobotCommunicationSubTab: React.FC = () => {
           const isSelected = selectedItemId === robot.id;
           const p2pNode = p2pNodes[robot.id];
           const isOnline = p2pNode ? p2pNode.isOnline : (robot.isOnline ?? true);
-          // Filter out internal heartbeats and routine non-actionable status messages
+          // Filter history to ONLY show messages directly associated with this specific robot
           const history = p2pNode
-            ? p2pNode.history.filter((m) => m.type !== 'HEARTBEAT' && (m.type !== 'STATUS_UPDATE' || m.payload?.body))
+            ? p2pNode.history.filter(
+                (m) =>
+                  (m.senderId === robot.id || m.receiverId === robot.id) &&
+                  m.type !== 'HEARTBEAT' &&
+                  (m.type !== 'STATUS_UPDATE' || m.payload?.body)
+              )
             : [];
 
           return (

@@ -1,29 +1,45 @@
 # Autonomous Mobile Robot (AMR) Warehouse Simulator
-**Project Functional Overview**
+**Project Functional & Technical Overview**
 
-This project is an advanced decentralized Autonomous Mobile Robot (AMR) warehouse simulator built with Next.js, React, Zustand, and React-Konva. It enables users to dynamically design a warehouse floor plan and observe simulated AMRs intelligently allocating tasks and navigating the environment using peer-to-peer (P2P) negotiations.
+This project is an advanced decentralized Autonomous Mobile Robot (AMR) warehouse simulator built with **Next.js**, **React**, **Zustand**, and **React-Konva**. It enables users to dynamically design a warehouse floor plan, configure 3D models, and observe simulated AMRs intelligently allocating tasks and navigating the environment using peer-to-peer (P2P) negotiations.
 
 ---
 
-## 1. Warehouse Layout Engine (The `warehouseStore`)
-- **Interactive Workspace Builder:** Uses React-Konva to render a scalable grid. Users can place and manipulate Shelves, Obstacles, Pallets, Points of Interest (POIs), and Walls.
-- **Pathfinding:** Implements an A* algorithm allowing robots to navigate the grid while dynamically avoiding static obstacles and recalculating routes.
-- **Simulation Tick Engine:** Drives the simulation via a centralized clock that updates robot positions, resolves spatial conflicts, and triggers P2P message evaluations iteratively.
+## Key Features & System Modules
 
-## 2. Decentralized P2P Communication (`p2pStore`)
-- **No Central Coordinator:** Unlike traditional top-down AMR fleets, these robots operate via a Simulated P2P Network, communicating via a decentralized messaging model (`HEARTBEAT`, `TASK_ANNOUNCE`, `TASK_BID`, `STATUS_UPDATE`).
-- **Heartbeats & Topology:** Robots broadcast their presence. When a robot dies or drops offline, the peer network detects the lost heartbeat.
-- **Task Allocation (Contract Net Protocol):** Unassigned tasks are announced to all active robots. Available robots evaluate their distance, battery life, and payload capability, then submit a `TASK_BID`. Decentralized consensus algorithms execute locally to determine the optimal winning bidder.
+### 1. Figma-Style 2D Canvas Navigation & Controls
+- **Spacebar Hold Panning:** Holding `Spacebar` transforms the cursor into a grab hand, allowing fluid canvas panning from anywhere regardless of active tool selection.
+- **Middle-Mouse Drag:** Click and drag using the middle mouse button for instant canvas navigation.
+- **WASD & Arrow Navigation:** Use `Arrow Keys` or `W / A / S / D` to pan the workspace.
+- **Figma Zoom & View Shortcuts:**
+  - `Ctrl` + `+` / `=` : Zoom In (+20%)
+  - `Ctrl` + `-` : Zoom Out (-20%)
+  - `Ctrl` + `0` / `Shift` + `1` : Zoom to Fit
+  - `Shift` + `0` : Reset View (100% Scale)
 
-## 3. Task Management & Recovery (`taskStore` & `FailureRecoveryManager`)
-- **Dynamic Reallocation:** If an assigned robot goes offline, critically depletes its battery, or is unable to find a clear path to the payload, the `FailureRecoveryManager` detects this failure state.
-- **P2P Handover:** A failing robot broadcasts a `TASK_HANDOVER_REQUEST`. Available robots on the network evaluate the request, intercept the payload, and resume the task from the failure point without requiring a central server reboot.
+### 2. Warehouse Layout & Pathfinding Engine (`warehouseStore`)
+- **Interactive Workspace Builder:** Render a scalable 2D/3D grid with customizable Shelves, Obstacles, Pallets, Points of Interest (POIs), Chargers, and Boundary Walls.
+- **Dynamic A* Pathfinding (`engine/pathfinding.ts`):** Calculates shortest-path trajectories, automatically falls back to nearest walkable adjacent cells when targets lie on occupied structures, and deconflicts paths dynamically around stationary and moving obstacles.
+- **Default Grid Overlay Toggle:** Clean grid toggle controls with configurable grid snap boundaries.
 
-## 4. Collision Avoidance (`CollisionCoordinator`)
-- **Deterministic Yielding:** As robots move along their paths, a strict multi-step lookahead mechanism detects head-on collisions, intersection bottlenecks, and overlapping paths.
-- **Dynamic Priority Rules:** The system attempts to recalculate bypass routes on the fly. If no bypass exists, the robot with a shorter path (or lower priority) gracefully yields (enters a `WAITING` state) until the intersection clears, effectively preventing gridlocks.
+### 3. Decentralized P2P Communication & Contract Net Protocol (`p2pStore` & `SimulatedP2PNetwork`)
+- **Per-Robot Isolated Communication Logs:** Independent P2P chat feeds per robot that filter and display messages directly associated with that specific AMR node (`senderId` or `receiverId`).
+- **Priority Gated Allocation:** Tasks are processed through a strict priority gate (`URGENT` → `NORMAL` → `LOW`).
+- **State-Aware Bidding & Consensus:**
+  - Free/Idle robots evaluate distance, battery reserve, and payload capacity to submit competitive `TASK_BID`s.
+  - Active/Moving robots submit ineligible bids, ensuring secondary tasks are assigned to free peers (e.g. AMR-02, AMR-03) without fleet stalling.
+  - Accelerated re-announcements with incremented `allocationRound` numbers resolve stalled consensus rounds automatically.
+- **Coordinate Resolution Guards:** Tasks with unresolvable coordinates (`isTaskResolvable`) are auto-failed gracefully before dispatching.
 
-## 5. User Interface (UI)
-- **Warehouse Map:** Visually renders the simulation grid, robot traversal paths, live telemetry (battery, load, status), and active communication links (visualized as dashed lines).
-- **Inspector Panel:** Allows real-time inspection, editing, and spatial transformation of robots, shelves, and walls.
-- **Robot Fleet Dashboard:** Displays comprehensive logs of the P2P audit trails, live task bidding results, and robot failure statuses.
+### 4. Advanced Collision Avoidance & Cooperative Sidestepping (`CollisionCoordinator`)
+- **Proactive Ahead-of-Time Deconfliction:** Analyzes projected AMR trajectories to detect future corridor intersections before movements occur.
+- **Cooperative Sidestepping:** Idle AMRs blocking active routes receive `YIELD_REQUEST` messages and automatically step into adjacent walkable cells (`idleSidestepRequests`).
+- **Adjacent Docking Completion:** Detects when an AMR is adjacent (<= 1 cell) to its pickup or drop POI to execute item pickup/drop without getting blocked by docking geometry.
+- **Reactive Dynamic Replanning:** Blocked AMRs automatically compute deconflicted detour paths (`findDeconflictedPathAStar`) around other active peers.
+
+### 5. Component Palette & 3D Assets
+- **Spacious Component Palette:** Redesigned bottom bar with card padding (`92x42px`), clean icon/label spacing, and category filters (Robots, Obstacles, Decorations, Favorites).
+- **3D Asset Library:** Supports built-in 3D GLTF models including custom AMR robots (`cute_home_robot`, `cyberpunk_robot`, `zeery_delivery`), warehouse shelving units, EV charging stations, forklifts, and industrial machinery.
+
+### 6. Failure Recovery & Task Handover (`FailureRecoveryManager` & `TaskHandoverManager`)
+- **Decentralized Task Handover:** When an AMR encounters a critical failure or battery drop, it broadcasts a `TASK_HANDOVER_REQUEST`. Peer AMRs negotiate via P2P consensus to intercept the payload and complete the task without manual server intervention.
