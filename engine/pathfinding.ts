@@ -1,12 +1,14 @@
 import { Point } from '../types/warehouse';
+import { isCellOverlappingObject, TransformableObject } from './collisionBounds';
 
 // Define the state interface needed for pathfinding to avoid circular dependencies
 export interface PathfindingState {
   gridRows: number;
   gridCols: number;
-  obstacles: { row: number; col: number; width: number; height: number }[];
-  shelves: { row: number; col: number; width: number; height: number }[];
-  pallets?: { row: number; col: number; width: number; height: number }[];
+  cellSize?: number;
+  obstacles: TransformableObject[];
+  shelves: TransformableObject[];
+  pallets?: TransformableObject[];
 }
 
 export function isWalkable(
@@ -21,23 +23,25 @@ export function isWalkable(
     return false;
   }
 
-  // Check obstacles
+  const cellSize = state.cellSize ?? 20;
+
+  // Check obstacles using transformed world-space OBB
   for (const obs of state.obstacles) {
-    if (row >= obs.row && row < obs.row + obs.height && col >= obs.col && col < obs.col + obs.width) {
+    if (isCellOverlappingObject(row, col, obs, cellSize)) {
       return false;
     }
   }
 
-  // Check shelves
+  // Check shelves using transformed world-space OBB
   for (const shelf of state.shelves) {
-    if (row >= shelf.row && row < shelf.row + shelf.height && col >= shelf.col && col < shelf.col + shelf.width) {
+    if (isCellOverlappingObject(row, col, shelf, cellSize)) {
       return false;
     }
   }
 
   if (state.pallets) {
     for (const pallet of state.pallets) {
-      if (row >= pallet.row && row < pallet.row + pallet.height && col >= pallet.col && col < pallet.col + pallet.width) {
+      if (isCellOverlappingObject(row, col, pallet, cellSize)) {
         return false;
       }
     }

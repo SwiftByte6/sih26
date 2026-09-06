@@ -83,11 +83,20 @@ export function warehouseWorldSize(gridCols: number, gridRows: number, cellSize:
   };
 }
 
-export function cellsOverlap(a: GridOccupant, b: GridOccupant): boolean {
+import { objectsOverlapTransformed, TransformableObject } from '../engine/collisionBounds';
+
+export function cellsOverlap(
+  a: GridOccupant & Partial<TransformableObject>,
+  b: GridOccupant & Partial<TransformableObject>,
+  cellSize = 20
+): boolean {
+  if (a.scale || b.scale || a.rotY || b.rotY) {
+    return objectsOverlapTransformed(a, b, cellSize);
+  }
   return (
-    a.col < b.col + b.width &&
-    a.col + a.width > b.col &&
-    a.row < b.row + b.height &&
-    a.row + a.height > b.row
+    a.col < b.col + (a.width ?? 1) &&
+    a.col + (a.width ?? 1) > b.col &&
+    a.row < b.row + (b.height ?? 1) &&
+    a.row + (a.height ?? 1) > b.row
   );
 }

@@ -1,6 +1,7 @@
 import { Robot, Obstacle } from '../../types/warehouse';
 import { Task } from '../../types/task';
 import { findDeconflictedPathAStar, PathfindingState } from '../pathfinding';
+import { isCellOverlappingObject } from '../collisionBounds';
 export interface MovementStepIntent {
   robotId: string;
   currentCell: { col: number; row: number };
@@ -341,8 +342,9 @@ export function resolveTickCollisions(
     const targetCol = intent.targetCell.col;
     const targetRow = intent.targetCell.row;
 
-    const hitObstacle = obstacles.some(
-      (o) => targetRow >= o.row && targetRow < o.row + o.height && targetCol >= o.col && targetCol < o.col + o.width
+    const cellSize = warehouseState?.cellSize ?? 20;
+    const hitObstacle = obstacles.some((o) =>
+      isCellOverlappingObject(targetRow, targetCol, o, cellSize)
     );
 
     if (hitObstacle) {
