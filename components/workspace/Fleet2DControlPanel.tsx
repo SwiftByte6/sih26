@@ -124,6 +124,7 @@ export const Fleet2DControlPanel: React.FC = () => {
           const statusColor =
             robot.state === 'MOVING' ? '#42BFE5' :
             robot.state === 'WAITING' ? '#E5B84B' :
+            robot.state === 'NAVIGATING_TO_CHARGER' ? '#A855F7' :
             robot.state === 'CHARGING' ? '#4CCB8A' : '#778287';
 
           return (
@@ -140,7 +141,7 @@ export const Fleet2DControlPanel: React.FC = () => {
               <div className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: statusColor }} />
                 <span className="text-[10px] font-semibold" style={{ color: statusColor }}>
-                  {robot.state}
+                  {robot.state === 'NAVIGATING_TO_CHARGER' ? 'TO CHARGER ⚡' : robot.state}
                 </span>
               </div>
             </button>

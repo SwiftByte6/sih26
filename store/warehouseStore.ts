@@ -18,6 +18,9 @@ import {
   SelectedItemType,
   LayoutSnapshot,
   DEFAULT_TRANSFORM,
+  ChargerNode,
+  ChargerState,
+  BatteryConfig,
 } from '../types/warehouse';
 import { demoWarehouse, defaultWalls } from '../data/demoWarehouse';
 import { findPathAStar, findDeconflictedPathAStar, isWalkable } from '../engine/pathfinding';
@@ -29,6 +32,7 @@ import { useP2PStore } from './p2pStore';
 import { autoRearrangeLayout } from '../engine/rearrangeLayout';
 import { resolveTickCollisions, preemptivelyDeconflictTrajectories } from '../engine/coordination/CollisionCoordinator';
 import { resolveLocationCoordinates } from '../engine/evaluation/TaskEvaluator';
+import { showToast } from './toastStore';
 
 export type Task = { id: string, targetRow: number, targetCol: number, assignedTo: string | null };
 
@@ -39,6 +43,7 @@ export const lastRobotTelemetry = new Map<string, any>();
 export const lastConflictTime = new Map<string, number>();
 export const blockedTicksMap = new Map<string, number>();
 export const taskAllocationRounds = new Map<string, number>();
+export const lastChargerAttemptTime = new Map<string, number>();
 
 const MAX_MESSAGES = 200;
 const LAYOUT_KEY = 'amr-warehouse-layout';
@@ -257,6 +262,16 @@ interface WarehouseState {
   addCommunication: (msg: CommunicationMessage) => void;
   clearCommunications: () => void;
 
+  // Charging System State & Actions
+  batteryConfig: BatteryConfig;
+  chargers: ChargerNode[];
+  setBatteryConfig: (config: Partial<BatteryConfig>) => void;
+  syncChargersFromPOIs: () => void;
+  reserveCharger: (robotId: string, chargerId?: string) => ChargerNode | null;
+  occupyCharger: (robotId: string, chargerId: string) => boolean;
+  releaseCharger: (robotId: string) => void;
+  sendRobotToCharger: (robotId: string) => boolean;
+
   tick: () => void;
 }
 
@@ -298,7 +313,7 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
   isRunning: false,
   scale: 1,
   pan: { x: 0, y: 0 },
-  showGrid: true,
+  showGrid: false,
   gridRows: initialLayout.gridRows,
   gridCols: initialLayout.gridCols,
   cellSize: 20,
@@ -308,6 +323,216 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
 
   communications: [],
   activeCommLinks: [],
+
+  // Charging System State & Actions
+  batteryConfig: {
+    lowBatteryThreshold: 20,
+    criticalBatteryThreshold: 10,
+    fullBattery: 100,
+    chargingDuration: 10,
+    drainRatePerStep: 0.3,
+  },
+  chargers: initialLayout.pois
+    .filter((p) => p.type === 'CHARGER')
+    .map((p) => ({
+      id: p.id,
+      label: p.label || p.id,
+      row: p.row,
+      col: p.col,
+      state: 'AVAILABLE' as const,
+      reservedBy: null,
+      occupiedBy: null,
+    })),
+
+  setBatteryConfig: (config) => set((state) => ({
+    batteryConfig: { ...state.batteryConfig, ...config }
+  })),
+
+  syncChargersFromPOIs: () => set((state) => {
+    const chargerPois = state.pois.filter((p) => p.type === 'CHARGER');
+    const existingChargersMap = new Map(state.chargers.map((c) => [c.id, c]));
+    
+    const updatedChargers: ChargerNode[] = chargerPois.map((p) => {
+      const existing = existingChargersMap.get(p.id);
+      if (existing) {
+        return {
+          ...existing,
+          label: p.label || p.id,
+          row: p.row,
+          col: p.col,
+        };
+      }
+      return {
+        id: p.id,
+        label: p.label || p.id,
+        row: p.row,
+        col: p.col,
+        state: 'AVAILABLE' as const,
+        reservedBy: null,
+        occupiedBy: null,
+      };
+    });
+
+    return { chargers: updatedChargers };
+  }),
+
+  reserveCharger: (robotId, chargerId) => {
+    get().syncChargersFromPOIs();
+    const state = get();
+    const robot = state.robots.find((r) => r.id === robotId);
+    if (!robot) return null;
+
+    let target: ChargerNode | undefined;
+    if (chargerId) {
+      target = state.chargers.find((c) => c.id === chargerId && (c.state === 'AVAILABLE' || c.reservedBy === robotId));
+    } else {
+      const available = state.chargers.filter((c) => c.state === 'AVAILABLE' || c.reservedBy === robotId);
+      if (available.length === 0) return null;
+
+      available.sort((a, b) => {
+        const distA = Math.abs(a.row - robot.row) + Math.abs(a.col - robot.col);
+        const distB = Math.abs(b.row - robot.row) + Math.abs(b.col - robot.col);
+        return distA - distB;
+      });
+      target = available[0];
+    }
+
+    if (!target) return null;
+
+    const updatedChargers = state.chargers.map((c) => {
+      if (c.id === target!.id) {
+        return {
+          ...c,
+          state: 'RESERVED' as const,
+          reservedBy: robotId,
+        };
+      }
+      return c;
+    });
+
+    set({ chargers: updatedChargers });
+    return { ...target, state: 'RESERVED', reservedBy: robotId };
+  },
+
+  occupyCharger: (robotId, chargerId) => {
+    const state = get();
+    const charger = state.chargers.find((c) => c.id === chargerId);
+    if (!charger) return false;
+
+    const updatedChargers = state.chargers.map((c) => {
+      if (c.id === chargerId) {
+        return {
+          ...c,
+          state: 'OCCUPIED' as const,
+          reservedBy: robotId,
+          occupiedBy: robotId,
+        };
+      }
+      return c;
+    });
+
+    set({ chargers: updatedChargers });
+    return true;
+  },
+
+  releaseCharger: (robotId) => {
+    const state = get();
+    const updatedChargers = state.chargers.map((c) => {
+      if (c.reservedBy === robotId || c.occupiedBy === robotId) {
+        return {
+          ...c,
+          state: 'AVAILABLE' as const,
+          reservedBy: null,
+          occupiedBy: null,
+        };
+      }
+      return c;
+    });
+
+    set({ chargers: updatedChargers });
+  },
+
+  sendRobotToCharger: (robotId) => {
+    const state = get();
+    const robot = state.robots.find((r) => r.id === robotId);
+    if (!robot) return false;
+
+    if (robot.state === 'CHARGING') {
+      console.log(`[CHARGE DEBUG] ${robotId} is already in CHARGING state.`);
+      return true;
+    }
+
+    const charger = get().reserveCharger(robotId, robot.targetChargerId || undefined);
+    if (!charger) {
+      console.log(`[CHARGE DEBUG] ${robotId} requested charger, but NO available chargers found!`);
+      useP2PStore.getState().sendDirectMessage(robotId, 'ALL', 'CHARGER_REQUEST', {
+        body: `AMR ${robotId} requested charging, but no chargers are available!`,
+      });
+      showToast(`${robotId} could not find an available charger`, 'warning');
+      return false;
+    }
+
+    console.log(`[CHARGE DEBUG] ${robotId} reserved charger ${charger.id} at (${charger.col}, ${charger.row})`);
+
+    const dist = Math.abs(robot.row - charger.row) + Math.abs(robot.col - charger.col);
+    if (dist === 0) {
+      console.log(`[CHARGE DEBUG] ${robotId} is ALREADY at charger ${charger.id}. Occupying charger and starting CHARGING immediately.`);
+      get().occupyCharger(robotId, charger.id);
+      useP2PStore.getState().sendDirectMessage(robotId, 'ALL', 'CHARGING_STARTED', {
+        robotId,
+        chargerId: charger.id,
+        body: `Arrived at charger [${charger.label}]. Charging in progress.`,
+      });
+      showToast(`${robotId} started charging`, 'info');
+      const updatedRobots = state.robots.map((r) => {
+        if (r.id === robotId) {
+          return {
+            ...r,
+            state: 'CHARGING' as const,
+            chargingState: 'CHARGING' as const,
+            targetChargerId: charger.id,
+            chargingPoint: { row: charger.row, col: charger.col },
+            chargingStartTime: Date.now(),
+            path: [],
+            currentTask: `Charging at ${charger.label}`,
+          };
+        }
+        return r;
+      });
+      set({ robots: updatedRobots });
+      return true;
+    }
+
+    const path = findPathAStar(state, robot.row, robot.col, charger.row, charger.col);
+    console.log(`[CHARGE DEBUG] ${robotId} path to charger ${charger.id}: length ${path.length}`);
+
+    const updatedRobots = state.robots.map((r) => {
+      if (r.id === robotId) {
+        return {
+          ...r,
+          state: 'NAVIGATING_TO_CHARGER' as const,
+          chargingState: 'NAVIGATING' as const,
+          targetChargerId: charger.id,
+          chargingPoint: { row: charger.row, col: charger.col },
+          path,
+          currentTask: `Charging at ${charger.label}`,
+        };
+      }
+      return r;
+    });
+
+    useP2PStore.getState().sendDirectMessage(robotId, 'ALL', 'CHARGER_RESERVED', {
+      robotId,
+      chargerId: charger.id,
+      chargerPoint: { row: charger.row, col: charger.col },
+      body: `Reserved Charger [${charger.label}]. Navigating to position (${charger.col}, ${charger.row}).`,
+    });
+
+    showToast(`${robotId} battery low — heading to ${charger.label}`, 'warning');
+
+    set({ robots: updatedRobots });
+    return true;
+  },
 
   setViewMode: (mode) => set({ viewMode: mode }),
   setTransformMode: (mode) => set({ transformMode: mode }),
@@ -399,6 +624,7 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
       activeCommLinks: [],
       collisionsCount: 0,
     });
+    get().syncChargersFromPOIs();
     useP2PStore.getState().initializeNetwork(cloned.robots.map((r) => r.id));
   },
   setScale: (scale) => set({ scale }),
@@ -1196,7 +1422,56 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
         };
       }
 
-      if ((robot.state === 'MOVING' || robot.state === 'WAITING_FOR_PATH_CLEARANCE') && robot.path.length > 0) {
+      // Automatic low battery charger reservation for idle or active robots without task
+      if (
+        (robot.state as string) !== 'CHARGING' &&
+        robot.state !== 'NAVIGATING_TO_CHARGER' &&
+        robot.chargingState !== 'NAVIGATING' &&
+        robot.chargingState !== 'CHARGING'
+      ) {
+        if (robot.battery <= get().batteryConfig.lowBatteryThreshold) {
+          if (!robot.currentTask && !robot.currentTaskId) {
+            const lastAttempt = lastChargerAttemptTime.get(robot.id) || 0;
+            if (now - lastAttempt >= 3000) {
+              lastChargerAttemptTime.set(robot.id, now);
+              console.log(`[CHARGE DEBUG] ${robot.id} LOW BATTERY (${Math.round(robot.battery)}%). Auto-dispatching to charger.`);
+              setTimeout(() => {
+                get().sendRobotToCharger(robot.id);
+              }, 0);
+            }
+          }
+        }
+      }
+
+      // Check arrival for NAVIGATING_TO_CHARGER (including when path is empty or position reached)
+      if (robot.state === 'NAVIGATING_TO_CHARGER') {
+        const atCharger =
+          robot.path.length === 0 ||
+          (robot.chargingPoint && robot.row === robot.chargingPoint.row && robot.col === robot.chargingPoint.col);
+
+        if (atCharger) {
+          if (robot.targetChargerId) {
+            get().occupyCharger(robot.id, robot.targetChargerId);
+          }
+          console.log(`[CHARGE DEBUG] ${robot.id} ARRIVED AT CHARGER ${robot.targetChargerId || 'unknown'}. Transitioning to CHARGING.`);
+          p2pStore.broadcastMessage(robot.id, 'CHARGING_STARTED', {
+            robotId: robot.id,
+            chargerId: robot.targetChargerId,
+            body: `Arrived at charger. Charging in progress.`,
+          });
+          newLinks.push({ from: robot.id, to: 'ALL', expires: now + 2000 });
+          return {
+            ...robot,
+            path: [],
+            state: 'CHARGING' as const,
+            chargingState: 'CHARGING' as const,
+            chargingStartTime: now,
+            currentTask: 'Charging...',
+          };
+        }
+      }
+
+      if ((robot.state === 'MOVING' || robot.state === 'WAITING_FOR_PATH_CLEARANCE' || robot.state === 'NAVIGATING_TO_CHARGER') && robot.path.length > 0) {
         // Check if robot is blocked by collision coordinator
         if (collisionResolution.blockedRobotIds.has(robot.id)) {
           // Docking Proximity Check: If blocked while already adjacent to target pickup/drop POI, complete action directly
@@ -1259,7 +1534,7 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
                 return {
                   ...robot,
                   path: rerouted,
-                  state: 'MOVING' as const,
+                  state: robot.state === 'NAVIGATING_TO_CHARGER' ? ('NAVIGATING_TO_CHARGER' as const) : ('MOVING' as const),
                 };
               }
             }
@@ -1281,13 +1556,34 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
 
           // Move to next cell
           const remainingPath = robot.path.slice(1);
-          let newState: RobotState = 'MOVING';
+          let newState: RobotState = robot.state === 'NAVIGATING_TO_CHARGER' ? 'NAVIGATING_TO_CHARGER' : 'MOVING';
           let newTaskPhase: 'TO_PICKUP' | 'TO_DROP' | null = robot.taskPhase || null;
           let newCurrentTaskId: string | null = robot.currentTaskId || null;
           let newPath = remainingPath;
           
           if (remainingPath.length === 0) {
-            if (robot.taskPhase === 'TO_PICKUP' && robot.currentTaskId && robot.dropPoint) {
+            if (robot.state === 'NAVIGATING_TO_CHARGER') {
+              if (robot.targetChargerId) {
+                get().occupyCharger(robot.id, robot.targetChargerId);
+              }
+              console.log(`[CHARGE DEBUG] ${robot.id} ARRIVED AT CHARGER ${robot.targetChargerId || 'unknown'}. Transitioning to CHARGING.`);
+              p2pStore.broadcastMessage(robot.id, 'CHARGING_STARTED', {
+                robotId: robot.id,
+                chargerId: robot.targetChargerId,
+                body: `Arrived at charger. Charging in progress.`,
+              });
+              newLinks.push({ from: robot.id, to: 'ALL', expires: now + 2000 });
+              return {
+                ...robot,
+                col: nextCell.col,
+                row: nextCell.row,
+                path: [],
+                state: 'CHARGING' as const,
+                chargingState: 'CHARGING' as const,
+                chargingStartTime: now,
+                currentTask: 'Charging...',
+              };
+            } else if (robot.taskPhase === 'TO_PICKUP' && robot.currentTaskId && robot.dropPoint) {
               // Reached pickup, start going to drop
               taskStore.startTask(robot.currentTaskId);
               p2pStore.broadcastMessage(robot.id, 'TEXT', { body: `Picked up item. Heading to ${robot.dropPoint.label}` });
@@ -1323,16 +1619,23 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
             }
           }
           
-          // Battery warning & Phase 7 Dynamic Handover Trigger
-          const newBattery = robot.battery - 0.3;
-          if (newBattery <= 20 && robot.battery > 20) {
-            p2pStore.broadcastMessage(robot.id, 'TEXT', { body: `Battery at ${Math.round(newBattery)}%. Requesting charger & task handover.` });
+          // Battery drain on step
+          const drain = get().batteryConfig.drainRatePerStep;
+          const newBattery = Math.max(0, robot.battery - drain);
+          
+          if (newBattery <= get().batteryConfig.criticalBatteryThreshold && robot.battery > get().batteryConfig.criticalBatteryThreshold) {
+            console.log(`[CHARGE DEBUG] ${robot.id} CRITICAL BATTERY (${Math.round(newBattery)}%). Triggering handover & charging.`);
+            showToast(`${robot.id} critical battery — task handover initiated`, 'error');
+            p2pStore.broadcastMessage(robot.id, 'TEXT', { body: `CRITICAL BATTERY at ${Math.round(newBattery)}%! Initiating emergency task handover and charging navigation.` });
             if (robot.currentTask || robot.currentTaskId) {
               try {
                 const requestTaskHandover = require('../engine/recovery/TaskHandoverManager').requestTaskHandover;
                 requestTaskHandover(robot.id, 'CRITICAL_BATTERY');
               } catch (e) {}
             }
+            setTimeout(() => {
+              get().sendRobotToCharger(robot.id);
+            }, 0);
           }
           
           return {
@@ -1344,26 +1647,72 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
             taskPhase: newTaskPhase,
             currentTaskId: newCurrentTaskId,
             currentTask: newCurrentTaskId ? newCurrentTaskId : null,
-            battery: Math.max(0, newBattery)
+            battery: newBattery
           };
         }
       }
 
       if (robot.state === 'CHARGING') {
-        const newBattery = Math.min(100, robot.battery + 1.0);
-        if (newBattery >= 100) {
-          p2pStore.broadcastMessage(robot.id, 'STATUS_UPDATE', {
+        const config = get().batteryConfig;
+        const fullBatt = config.fullBattery || 100;
+        const durationSteps = Math.max(1, config.chargingDuration || 10);
+        const chargeRate = fullBatt / durationSteps;
+        const prevBatt = robot.battery;
+        const newBattery = Math.min(fullBatt, prevBatt + chargeRate);
+
+        console.log(`[CHARGE DEBUG] ${robot.id} CHARGING: battery ${Math.round(prevBatt)}% -> ${Math.round(newBattery)}%`);
+
+        if (newBattery >= fullBatt) {
+          const chargerId = robot.targetChargerId;
+          get().releaseCharger(robot.id);
+          console.log(`[CHARGE DEBUG] ${robot.id} reached 100% full battery. Charger ${chargerId || 'unknown'} released.`);
+          p2pStore.broadcastMessage(robot.id, 'CHARGING_COMPLETED', {
             robotId: robot.id,
-            status: 'WAITING',
-            battery: 100,
-            body: `CHARGING complete (100%). Transitioning to WAITING.`,
+            battery: fullBatt,
+            body: `CHARGING complete (${fullBatt}%). Charger released.`,
           });
+          showToast(`${robot.id} fully charged — returning to operation`, 'success');
+
+          // Re-validate task ownership & resume interrupted task if valid
+          let nextState: RobotState = 'IDLE';
+          let nextTask: string | null = null;
+          let nextTaskId: string | null = null;
+          let nextTaskPhase: 'TO_PICKUP' | 'TO_DROP' | null = null;
+          let nextPath: { row: number; col: number }[] = [];
+
+          if (robot.interruptedTaskId) {
+            const activeTask = useTaskStore.getState().getTask(robot.interruptedTaskId);
+            if (activeTask && activeTask.assigned_robot_id === robot.id && (activeTask.status === 'ASSIGNED' || activeTask.status === 'IN_PROGRESS')) {
+              console.log(`[CHARGE DEBUG] ${robot.id} resuming interrupted task ${robot.interruptedTaskId}`);
+              const pickupCoord = resolveLocationCoordinates(activeTask.pickup_point, state.pois, state.shelves);
+              const dropCoord = resolveLocationCoordinates(activeTask.drop_point, state.pois, state.shelves);
+              if (pickupCoord && dropCoord) {
+                nextTaskId = activeTask.task_id;
+                nextTaskPhase = 'TO_PICKUP';
+                nextPath = findPathAStar(state, robot.row, robot.col, pickupCoord.row, pickupCoord.col);
+                nextState = nextPath.length > 0 ? 'MOVING' : 'WAITING';
+                nextTask = `Pickup at ${pickupCoord.label}`;
+              }
+            }
+          }
+
+          console.log(`[CHARGE DEBUG] ${robot.id} post-charge transition -> ${nextState}`);
+
           return {
             ...robot,
-            battery: 100,
-            state: 'WAITING' as const,
+            battery: fullBatt,
+            state: nextState,
+            chargingState: 'COMPLETED' as const,
+            targetChargerId: null,
+            chargingPoint: null,
+            currentTask: nextTask,
+            currentTaskId: nextTaskId,
+            taskPhase: nextTaskPhase,
+            path: nextPath,
+            interruptedTaskId: null,
           };
         }
+
         return {
           ...robot,
           battery: newBattery,

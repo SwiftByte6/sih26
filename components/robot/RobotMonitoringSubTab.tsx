@@ -65,17 +65,20 @@ export const RobotMonitoringSubTab: React.FC = () => {
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase w-fit ${
                           robot.state === 'MOVING' ? 'bg-accent text-white' :
                           robot.state === 'WAITING' ? 'bg-warning text-white' :
+                          robot.state === 'NAVIGATING_TO_CHARGER' ? 'bg-purple-600 text-white font-mono' :
                           robot.state === 'WAITING_FOR_PATH_CLEARANCE' ? 'bg-amber-600 text-white font-mono' :
                           robot.state === 'CHARGING' ? 'bg-success text-white' : 'bg-red-600 text-white'
                         }`}>
-                          {robot.state === 'WAITING_FOR_PATH_CLEARANCE' ? 'PATH BLOCKED (YIELDING)' : robot.state}
+                          {robot.state === 'WAITING_FOR_PATH_CLEARANCE' ? 'PATH BLOCKED (YIELDING)' :
+                           robot.state === 'NAVIGATING_TO_CHARGER' ? 'TO CHARGER ⚡' : robot.state}
                         </span>
                         <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase w-fit ${
                           robot.state === 'ERROR' || !isOnline ? 'bg-red-100 text-red-800 border border-red-300' :
                           robot.state === 'MOVING' ? 'bg-blue-100 text-blue-800 border border-blue-300' :
+                          robot.state === 'NAVIGATING_TO_CHARGER' ? 'bg-purple-100 text-purple-800 border border-purple-300 font-bold' :
                           robot.state === 'CHARGING' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-emerald-100 text-emerald-800 border border-emerald-400 font-bold'
                         }`}>
-                          {robot.state === 'ERROR' || !isOnline ? 'FAILED' : robot.state === 'MOVING' ? 'BUSY' : robot.state === 'CHARGING' ? 'CHARGING' : 'AVAILABLE'}
+                          {robot.state === 'ERROR' || !isOnline ? 'FAILED' : robot.state === 'MOVING' ? 'BUSY' : robot.state === 'NAVIGATING_TO_CHARGER' ? 'NAVIGATING' : robot.state === 'CHARGING' ? 'CHARGING' : 'AVAILABLE'}
                         </span>
                       </div>
                     </td>
@@ -149,6 +152,17 @@ export const RobotMonitoringSubTab: React.FC = () => {
                     <td className="py-3 px-3 flex gap-1">
                       {failStatus === 'NORMAL' ? (
                         <>
+                          {robot.state !== 'CHARGING' && robot.state !== 'NAVIGATING_TO_CHARGER' && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                useWarehouseStore.getState().sendRobotToCharger(robot.id);
+                              }}
+                              className="px-2 py-1 bg-purple-600 text-white rounded text-[9px] font-bold hover:bg-purple-700 shadow-sm flex items-center gap-1"
+                            >
+                              ⚡ Charge
+                            </button>
+                          )}
                           {(robot.currentTask || robot.currentTaskId) && (
                             <button
                               onClick={(e) => {

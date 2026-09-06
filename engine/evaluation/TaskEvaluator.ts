@@ -269,6 +269,9 @@ export function evaluateTask(
   if (robot.state === 'ERROR') {
     ineligibilityReasons.push(`Robot ${robot.id} is in ERROR state.`);
   }
+  if (robot.state === 'CHARGING' || robot.state === 'NAVIGATING_TO_CHARGER' || robot.chargingState === 'NAVIGATING' || robot.chargingState === 'CHARGING') {
+    ineligibilityReasons.push(`Robot ${robot.id} is currently charging or navigating to a charger.`);
+  }
   if (robot.failureStatus && robot.failureStatus !== 'NORMAL') {
     ineligibilityReasons.push(`Robot ${robot.id} failure status: ${robot.failureStatus}.`);
   }

@@ -89,7 +89,27 @@ export type PointOfInterest = {
   label: string;
 } & Partial<ObjectTransform>;
 
-export type RobotState = 'IDLE' | 'MOVING' | 'CHARGING' | 'ERROR' | 'WAITING' | 'WAITING_FOR_PATH_CLEARANCE';
+export type ChargerState = 'AVAILABLE' | 'RESERVED' | 'OCCUPIED';
+
+export type ChargerNode = {
+  id: string;
+  label: string;
+  row: number;
+  col: number;
+  state: ChargerState;
+  reservedBy: string | null;
+  occupiedBy: string | null;
+};
+
+export type BatteryConfig = {
+  lowBatteryThreshold: number;
+  criticalBatteryThreshold: number;
+  fullBattery: number;
+  chargingDuration: number;
+  drainRatePerStep: number;
+};
+
+export type RobotState = 'IDLE' | 'MOVING' | 'NAVIGATING_TO_CHARGER' | 'CHARGING' | 'ERROR' | 'WAITING' | 'WAITING_FOR_PATH_CLEARANCE';
 
 export type Robot = {
   id: string;
@@ -105,6 +125,12 @@ export type Robot = {
   pickupPoint?: { row: number, col: number, label: string } | null;
   dropPoint?: { row: number, col: number, label: string } | null;
   path: {row: number, col: number}[];
+  // Charging System Fields
+  chargingState?: 'IDLE' | 'REQUESTING' | 'NAVIGATING' | 'CHARGING' | 'COMPLETED';
+  targetChargerId?: string | null;
+  chargingPoint?: { row: number; col: number } | null;
+  chargingStartTime?: number | null;
+  interruptedTaskId?: string | null;
   // Hardware Telemetry & Capability (Phase 2)
   sensingRadius?: number;       // in meters
   payloadCapacity?: number;     // in kg

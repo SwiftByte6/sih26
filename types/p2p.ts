@@ -29,7 +29,13 @@ export type P2PMessageType =
   | 'PATH_DECONFLICT'
   | 'CONFLICT_DETECTED'
   | 'YIELD_REQUEST'
-  | 'YIELD_RESPONSE';
+  | 'YIELD_RESPONSE'
+  // Charging System Message Types
+  | 'CHARGER_REQUEST'
+  | 'CHARGER_RESERVED'
+  | 'CHARGER_RELEASED'
+  | 'CHARGING_STARTED'
+  | 'CHARGING_COMPLETED';
 
 export interface TrajectoryPoint {
   tick: number;
