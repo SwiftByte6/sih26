@@ -298,7 +298,7 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
   isRunning: false,
   scale: 1,
   pan: { x: 0, y: 0 },
-  showGrid: true,
+  showGrid: false,
   gridRows: initialLayout.gridRows,
   gridCols: initialLayout.gridCols,
   cellSize: 20,

@@ -107,11 +107,11 @@ export const ComponentPalette: React.FC = () => {
   };
 
   return (
-    <div className="w-full bg-panel border-t border-border shadow-md px-2.5 py-1.5 flex items-center gap-2.5 z-20 select-none h-[54px]">
-      {/* Icon-Only Category Selector (No Slider/Scrollbar!) */}
-      <div className="bg-app border border-border rounded-md px-2 py-1 flex items-center gap-1.5 h-full flex-shrink-0">
-        <span className="text-[8px] font-bold tracking-wider uppercase text-muted pr-1.5 border-r border-border flex items-center gap-1">
-          <FolderOpen size={12} className="text-accent" />
+    <div className="w-full bg-panel border-t border-border shadow-md px-3.5 py-2.5 flex items-center gap-3.5 z-20 select-none h-[64px]">
+      {/* Icon-Only Category Selector */}
+      <div className="bg-app border border-border rounded-lg px-2.5 py-1.5 flex items-center gap-2 h-full flex-shrink-0">
+        <span className="text-[9px] font-bold tracking-wider uppercase text-muted pr-2 border-r border-border flex items-center gap-1.5">
+          <FolderOpen size={14} className="text-accent" />
           <span className="hidden md:inline">Library</span>
         </span>
 
@@ -122,17 +122,17 @@ export const ComponentPalette: React.FC = () => {
             <button
               key={cat.key}
               onClick={() => setActiveCategory(cat.key)}
-              className={`p-1.5 rounded-md transition-all relative flex items-center justify-center ${
+              className={`p-1.5 px-2 rounded-md transition-all relative flex items-center justify-center gap-1 ${
                 isActive
-                  ? 'bg-accent text-white shadow-2xs border border-accent'
+                  ? 'bg-accent text-white shadow-xs border border-accent'
                   : 'text-text hover:bg-panel hover:text-accent bg-panel border border-border'
               }`}
               title={`${cat.label} (${cat.count})`}
             >
-              <Icon size={14} className={isActive ? 'text-white' : 'text-accent'} />
+              <Icon size={15} className={isActive ? 'text-white' : 'text-accent'} />
               {cat.count > 0 && (
-                <span className={`absolute -top-1 -right-1 text-[7px] font-extrabold px-1 rounded-full font-mono leading-none ${
-                  isActive ? 'bg-white text-accent' : 'bg-accent text-white'
+                <span className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded-full font-mono leading-none ${
+                  isActive ? 'bg-white text-accent' : 'bg-accent/15 text-accent border border-accent/30'
                 }`}>
                   {cat.count}
                 </span>
@@ -142,20 +142,20 @@ export const ComponentPalette: React.FC = () => {
         })}
       </div>
 
-      {/* Files & Models inside Selected Category (Horizontal Scroll along X) */}
-      <div className="flex-1 bg-app border border-border rounded-md p-1 flex items-center justify-between h-full overflow-hidden min-w-0">
-        <div className="hidden lg:flex flex-col justify-center px-1.5 flex-shrink-0 border-r border-border mr-1 max-w-[130px]">
-          <span className="text-[8px] font-bold tracking-wider uppercase text-muted truncate">
+      {/* Files & Models inside Selected Category */}
+      <div className="flex-1 bg-app border border-border rounded-lg p-1.5 px-3 flex items-center justify-between h-full overflow-hidden min-w-0">
+        <div className="hidden lg:flex flex-col justify-center px-2 flex-shrink-0 border-r border-border mr-2 max-w-[140px]">
+          <span className="text-[9px] font-bold tracking-wider uppercase text-muted truncate">
             {categoriesConfig.find((c) => c.key === activeCategory)?.label}
           </span>
-          <span className="text-[7px] text-muted truncate">
+          <span className="text-[8px] text-muted truncate mt-0.5">
             {filteredItems.length} items available
           </span>
         </div>
 
-        <div className="flex-1 flex items-center gap-1.5 overflow-x-auto overflow-y-hidden" style={{ scrollbarWidth: 'thin' }}>
+        <div className="flex-1 flex items-center gap-2.5 overflow-x-auto overflow-y-hidden py-0.5 px-1" style={{ scrollbarWidth: 'thin' }}>
           {filteredItems.length === 0 ? (
-            <div className="flex-1 flex items-center justify-center text-[9px] text-muted italic px-2 text-center">
+            <div className="flex-1 flex items-center justify-center text-[10px] text-muted italic px-3 text-center">
               No items in category. Click ⭐ on any card to add to Favorites.
             </div>
           ) : (
@@ -169,9 +169,9 @@ export const ComponentPalette: React.FC = () => {
                   draggable
                   onDragStart={(e) => handleDragStart(e, item.type, item.assetUrl)}
                   onClick={() => setPendingPlaceType(isSelected ? null : item.type, item.assetUrl)}
-                  className={`w-[78px] h-[34px] bg-panel border rounded-md flex flex-col items-center justify-center flex-shrink-0 cursor-grab hover:border-accent hover:bg-white transition-all relative select-none p-0.5 ${
+                  className={`min-w-[92px] h-[42px] px-2.5 py-1 bg-panel border rounded-lg flex items-center gap-2 flex-shrink-0 cursor-grab hover:border-accent hover:bg-white hover:shadow-xs transition-all relative select-none ${
                     isSelected
-                      ? 'border-accent bg-white ring-1 ring-accent'
+                      ? 'border-accent bg-white ring-2 ring-accent/30 shadow-xs'
                       : item.isNew
                       ? 'border-accent/60 bg-accent/5 hover:bg-white'
                       : 'border-border'
@@ -184,17 +184,20 @@ export const ComponentPalette: React.FC = () => {
                       e.stopPropagation();
                       toggleStar(item.label);
                     }}
-                    className="absolute top-0.5 left-0.5 p-0.5 rounded-full hover:bg-app transition-colors z-10"
+                    className="absolute top-1 right-1 p-0.5 rounded-full hover:bg-app transition-colors z-10"
                     title={isStarred ? "Remove from Favorites" : "Mark as Favorite"}
                   >
                     <Star
-                      size={9}
-                      className={isStarred ? "fill-amber-400 text-amber-500" : "text-muted/40 hover:text-amber-500"}
+                      size={10}
+                      className={isStarred ? "fill-amber-400 text-amber-500" : "text-muted/30 hover:text-amber-500"}
                     />
                   </button>
 
-                  <item.icon size={13} className={item.isNew ? "text-accent" : "text-text"} />
-                  <span className="text-[8px] font-bold text-text text-center px-0.5 truncate w-full leading-none mt-0.5">
+                  <div className="p-1 rounded-md bg-app flex items-center justify-center flex-shrink-0">
+                    <item.icon size={15} className={item.isNew ? "text-accent" : "text-text"} />
+                  </div>
+
+                  <span className="text-[9px] font-bold text-text truncate max-w-[54px] leading-tight">
                     {item.label}
                   </span>
                 </div>
