@@ -60,7 +60,7 @@ export const RobotCommunicationSubTab: React.FC = () => {
         return `${taskId} | Score: 0 (Ineligible)`;
       }
       const score = payload.suitabilityScore !== undefined ? payload.suitabilityScore : '?';
-      const dist = payload.distanceToPickup ? ` | Dist: ${payload.distanceToPickup}m` : '';
+      const dist = payload.distanceToPickup !== undefined && payload.distanceToPickup !== null ? ` | Dist: ${payload.distanceToPickup}m` : '';
       return `${taskId} | Score: ${score}${dist}`;
     }
 
