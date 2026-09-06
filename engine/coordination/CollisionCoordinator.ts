@@ -1,7 +1,6 @@
 import { Robot, Obstacle } from '../../types/warehouse';
 import { Task } from '../../types/task';
-import { findDeconflictedPathAStar, findPathAStar, PathfindingState } from '../pathfinding';
-
+import { findDeconflictedPathAStar, PathfindingState } from '../pathfinding';
 export interface MovementStepIntent {
   robotId: string;
   currentCell: { col: number; row: number };
