@@ -11,6 +11,7 @@ import { SimulationControls } from '../components/simulation/SimulationControls'
 import { TaskManagementPanel } from '../components/task/TaskManagementPanel';
 import { RobotFleetSection } from '../components/robot/RobotFleetSection';
 import { ManageRobotsModal } from '../components/robot/ManageRobotsModal';
+import { ToastContainer } from '../components/ui/ToastContainer';
 import { useTaskStore } from '../store/taskStore';
 
 export default function SimulatorPage() {
@@ -33,6 +34,7 @@ export default function SimulatorPage() {
 
   return (
     <div className="h-screen w-screen flex flex-col bg-white overflow-hidden text-text select-none">
+      <ToastContainer />
       <TitleBar />
      
       <Toolbar />

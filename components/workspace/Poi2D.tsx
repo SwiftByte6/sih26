@@ -7,7 +7,7 @@ import { useWarehouseStore } from '../../store/warehouseStore';
 import { useSvgImage } from '../../lib/useSvgImage';
 
 export const Poi2D: React.FC<{ poi: PointOfInterest }> = ({ poi }) => {
-  const { selectedItemId, setSelectedItem, updatePoi, cellSize, appMode } = useWarehouseStore();
+  const { selectedItemId, setSelectedItem, updatePoi, cellSize, appMode, chargers } = useWarehouseStore();
   const pickupImg = useSvgImage('/assets/warehouse/pickup.svg');
   const dropImg = useSvgImage('/assets/warehouse/drop.svg');
 
@@ -15,7 +15,13 @@ export const Poi2D: React.FC<{ poi: PointOfInterest }> = ({ poi }) => {
   const builder = appMode === 'BUILDER';
   const isPickup = poi.type === 'PICKUP';
   const isDrop = poi.type === 'DROP';
-  const fill = isPickup ? '#42BFE5' : isDrop ? '#4CCB8A' : '#E5B84B';
+  const isCharger = poi.type === 'CHARGER';
+
+  const chargerInfo = isCharger ? chargers.find((c) => c.id === poi.id) : null;
+  const chargerState = chargerInfo?.state || 'AVAILABLE';
+
+  const chargerColor = chargerState === 'AVAILABLE' ? '#4CCB8A' : chargerState === 'RESERVED' ? '#E5B84B' : '#42BFE5';
+  const fill = isPickup ? '#42BFE5' : isDrop ? '#4CCB8A' : chargerColor;
 
   const svgImage = isPickup ? pickupImg : isDrop ? dropImg : null;
   const iconSize = cellSize * 1.6;
@@ -40,6 +46,11 @@ export const Poi2D: React.FC<{ poi: PointOfInterest }> = ({ poi }) => {
         <Circle radius={iconSize * 0.65} stroke="#42BFE5" strokeWidth={2} dash={[4, 3]} />
       )}
 
+      {/* Charger Glow Ring */}
+      {isCharger && (
+        <Circle radius={iconSize * 0.55} fill={chargerColor} opacity={chargerState === 'OCCUPIED' ? 0.4 : 0.2} />
+      )}
+
       {/* Render Dedicated Pickup or Drop SVG Asset */}
       {svgImage ? (
         <KonvaImage
@@ -54,7 +65,7 @@ export const Poi2D: React.FC<{ poi: PointOfInterest }> = ({ poi }) => {
           <Circle radius={14} fill={fill} opacity={0.25} />
           <Circle radius={10} fill={fill} />
           <Text
-            text={isPickup ? 'P' : isDrop ? 'D' : 'C'}
+            text={isPickup ? 'P' : isDrop ? 'D' : '⚡'}
             x={-10}
             y={-5}
             width={20}
@@ -68,10 +79,10 @@ export const Poi2D: React.FC<{ poi: PointOfInterest }> = ({ poi }) => {
 
       {/* Station Label */}
       <Text
-        text={poi.label}
-        x={-36}
+        text={isCharger ? `${poi.label} (${chargerState[0]})` : poi.label}
+        x={-40}
         y={iconSize * 0.5 + 2}
-        width={72}
+        width={80}
         align="center"
         fill="#F1F5F6"
         fontSize={9}

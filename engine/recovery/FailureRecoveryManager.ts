@@ -67,6 +67,7 @@ export function triggerRobotFailure(robotId: string, failureType: 'OFFLINE' | 'E
  */
 export function restoreRobot(robotId: string): void {
   const warehouseStore = useWarehouseStore.getState();
+  warehouseStore.releaseCharger(robotId);
   warehouseStore.updateRobot(robotId, {
     state: 'WAITING',
     isOnline: true,

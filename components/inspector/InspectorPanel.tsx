@@ -266,7 +266,10 @@ export const InspectorPanel: React.FC = () => {
                 <span className="text-[10px] text-muted font-semibold">Battery</span>
                 <div className="flex items-center gap-2">
                   <div className="flex-1 h-2.5 bg-app rounded-xs overflow-hidden border border-border">
-                    <div className="h-full bg-success" style={{ width: `${selectedRobot.battery}%` }} />
+                    <div
+                      className={`h-full ${selectedRobot.battery > 50 ? 'bg-success' : selectedRobot.battery > 20 ? 'bg-warning' : 'bg-danger'}`}
+                      style={{ width: `${selectedRobot.battery}%` }}
+                    />
                   </div>
                   <span className="font-mono text-[11px] font-bold">{Math.round(selectedRobot.battery)}%</span>
                 </div>
@@ -275,6 +278,11 @@ export const InspectorPanel: React.FC = () => {
                 <span className="text-[10px] text-muted font-semibold">Current Task</span>
                 <div className="font-mono bg-workspace p-1.5 border border-border rounded-xs mt-0.5 text-[11px] truncate">{selectedRobot.currentTask || 'Idle / Unassigned'}</div>
               </div>
+              {selectedRobot.targetChargerId && (
+                <div className="mt-2 text-[10px] font-mono bg-purple-50 p-1.5 border border-purple-200 rounded text-purple-800">
+                  ⚡ Target Charger: <span className="font-bold">{selectedRobot.targetChargerId}</span>
+                </div>
+              )}
             </div>
 
             <div>
@@ -347,6 +355,21 @@ export const InspectorPanel: React.FC = () => {
               <div className="font-bold text-[14px]">{selectedPoi.type}</div>
               <div className="font-mono mt-1">{selectedPoi.label}</div>
             </div>
+            {selectedPoi.type === 'CHARGER' && (
+              <div className="text-[11px] font-mono bg-workspace p-2 border border-border rounded-xs flex flex-col gap-1">
+                <div className="text-[10px] font-bold text-muted tracking-wider uppercase mb-1">Charger Telemetry</div>
+                {(() => {
+                  const charger = useWarehouseStore.getState().chargers.find(c => c.id === selectedPoi.id);
+                  return (
+                    <>
+                      <div className="flex justify-between"><span>Status:</span> <span className="font-bold text-accent">{charger?.state || 'AVAILABLE'}</span></div>
+                      <div className="flex justify-between"><span>Reserved By:</span> <span>{charger?.reservedBy || 'None'}</span></div>
+                      <div className="flex justify-between"><span>Occupied By:</span> <span>{charger?.occupiedBy || 'None'}</span></div>
+                    </>
+                  );
+                })()}
+              </div>
+            )}
             {transformFields('POI', selectedPoi.id, selectedPoi.row, selectedPoi.col, 1, 1, selectedPoi)}
           </div>
         )}
