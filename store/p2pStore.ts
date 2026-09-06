@@ -45,53 +45,26 @@ export const useP2PStore = create<P2PState>((set, get) => ({
     robotIds.forEach((id) => networkInstance.registerNode(id));
     const updatedNodes: Record<string, AmrAgentNode> = {};
     networkInstance.getAllNodes().forEach((node) => {
-      updatedNodes[node.robotId] = { ...node };
+      updatedNodes[node.robotId] = {
+        ...node,
+        peerList: { ...node.peerList },
+        knownTasks: { ...node.knownTasks },
+        inbox: [...node.inbox],
+        history: [...node.history],
+        stats: { ...node.stats },
+      };
     });
     set({ nodes: updatedNodes });
   },
 
   sendDirectMessage: (senderId, receiverId, type, payload) => {
     const success = networkInstance.sendDirectMessage(senderId, receiverId, type, payload);
-    if (success && type !== 'HEARTBEAT') {
-      const bodyText = typeof payload === 'string' ? payload : payload?.body || payload?.status || type;
-      const category = (type.startsWith('TASK_') ? 'TASK' : type === 'STATUS_UPDATE' ? 'SYSTEM' : 'COORDINATION') as any;
-      try {
-        useWarehouseStore.getState().addCommunication({
-          id: `COMM-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-          timestamp: Date.now(),
-          sender: senderId,
-          receiver: receiverId,
-          category,
-          priority: 'NORMAL',
-          message: `[${type}] ${bodyText}`,
-        });
-      } catch (e) {
-        console.error("Failed to add communication", e);
-      }
-    }
     get().processHeartbeats(); // sync store nodes snapshot
     return success;
   },
 
   broadcastMessage: (senderId, type, payload) => {
     const success = networkInstance.broadcastMessage(senderId, type, payload);
-    if (success && type !== 'HEARTBEAT') {
-      const bodyText = typeof payload === 'string' ? payload : payload?.body || payload?.status || type;
-      const category = (type.startsWith('TASK_') ? 'TASK' : type === 'STATUS_UPDATE' ? 'SYSTEM' : 'COORDINATION') as any;
-      try {
-        useWarehouseStore.getState().addCommunication({
-          id: `COMM-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-          timestamp: Date.now(),
-          sender: senderId,
-          receiver: 'ALL',
-          category,
-          priority: 'NORMAL',
-          message: `[${type}] ${bodyText}`,
-        });
-      } catch (e) {
-        console.error("Failed to add broadcast communication", e);
-      }
-    }
     get().processHeartbeats(); // sync store nodes snapshot
     return success;
   },
@@ -110,7 +83,14 @@ export const useP2PStore = create<P2PState>((set, get) => ({
   processHeartbeats: () => {
     const updatedNodes: Record<string, AmrAgentNode> = {};
     networkInstance.getAllNodes().forEach((node) => {
-      updatedNodes[node.robotId] = { ...node };
+      updatedNodes[node.robotId] = {
+        ...node,
+        peerList: { ...node.peerList },
+        knownTasks: { ...node.knownTasks },
+        inbox: [...node.inbox],
+        history: [...node.history],
+        stats: { ...node.stats },
+      };
     });
     set({ nodes: updatedNodes });
   },
@@ -119,7 +99,14 @@ export const useP2PStore = create<P2PState>((set, get) => ({
     networkInstance.resetNetwork();
     const updatedNodes: Record<string, AmrAgentNode> = {};
     networkInstance.getAllNodes().forEach((node) => {
-      updatedNodes[node.robotId] = { ...node };
+      updatedNodes[node.robotId] = {
+        ...node,
+        peerList: { ...node.peerList },
+        knownTasks: { ...node.knownTasks },
+        inbox: [...node.inbox],
+        history: [...node.history],
+        stats: { ...node.stats },
+      };
     });
     set({ nodes: updatedNodes, testSummary: null });
   },

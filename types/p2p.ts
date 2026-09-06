@@ -14,6 +14,7 @@ export type P2PMessageType =
   | 'TASK_ANNOUNCEMENT'
   | 'TASK_BID'
   | 'TASK_WINNER_PROPOSAL'
+  | 'CONSENSUS'
   | 'TASK_CLAIMED'
   | 'TASK_RELEASED'
   | 'TASK_COMPLETED'
@@ -22,7 +23,36 @@ export type P2PMessageType =
   | 'ROBOT_FAILURE'
   | 'TASK_RECOVERY_ANNOUNCEMENT'
   // Phase 7 Dynamic Reallocation Message Types
-  | 'TASK_HANDOVER_REQUEST';
+  | 'TASK_HANDOVER_REQUEST'
+  // Phase 9 Proactive Trajectory Coordination & Deconfliction
+  | 'PATH_INTENT'
+  | 'PATH_DECONFLICT'
+  | 'CONFLICT_DETECTED'
+  | 'YIELD_REQUEST'
+  | 'YIELD_RESPONSE';
+
+export interface TrajectoryPoint {
+  tick: number;
+  row: number;
+  col: number;
+}
+
+export interface PathIntentPayload {
+  robotId: string;
+  priorityScore: number;
+  currentTaskId?: string | null;
+  trajectory: TrajectoryPoint[];
+}
+
+export interface PathDeconflictPayload {
+  yieldingRobotId: string;
+  priorityRobotId: string;
+  conflictLocation: { row: number; col: number };
+  conflictTick: number;
+  conflictType: 'VERTEX_COLLISION' | 'HEAD_ON_SWAP';
+  reroutedPathLength: number;
+  body: string;
+}
 
 export type PeerNodeStatus = 'ONLINE' | 'OFFLINE';
 
@@ -75,7 +105,8 @@ export interface LocalTaskKnowledge {
   evaluation?: TaskEvaluationResult;
   myBidSent?: boolean;
   myProposalSent?: boolean;
-  claimedBy?: string;
+  myConsensusSent?: boolean;
+  claimedBy?: string | null;
   status?: 'PENDING' | 'PROPOSED' | 'CLAIMED';
   peerBids: Record<string, PeerBidEntry>; // Keyed by peer's robotId (e.g. "AMR-02")
   peerProposals?: Record<string, WinnerProposalEntry>; // Keyed by peer's robotId (e.g. "AMR-02")

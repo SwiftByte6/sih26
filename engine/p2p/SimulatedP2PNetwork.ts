@@ -63,6 +63,17 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
     this.nodes.delete(robotId);
     this.nodes.forEach((node) => {
       delete node.peerList[robotId];
+      if (node.knownTasks) {
+        Object.values(node.knownTasks).forEach((tk) => {
+          if (tk.peerBids) delete tk.peerBids[robotId];
+          if (tk.peerProposals) delete tk.peerProposals[robotId];
+          if (tk.claimedBy === robotId) {
+            tk.claimedBy = null;
+            tk.status = 'PENDING';
+            tk.allocationState = 'ANNOUNCED';
+          }
+        });
+      }
     });
   }
 
@@ -79,22 +90,76 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
       if (message.type === 'HEARTBEAT') {
         sender.lastHeartbeatSent = message.timestamp;
       }
+      if (message.type === 'TASK_BID' && message.payload?.taskId) {
+        const tk = sender.knownTasks?.[message.payload.taskId];
+        if (tk) {
+          tk.peerBids = tk.peerBids || {};
+          tk.peerBids[sender.robotId] = {
+            robotId: sender.robotId,
+            timestamp: message.timestamp,
+            eligible: message.payload.eligible ?? true,
+            suitabilityScore: message.payload.suitabilityScore ?? 0,
+            evaluation: message.payload.evaluation,
+          };
+        }
+      }
+      if (message.type === 'TASK_CLAIMED' && message.payload?.taskId) {
+        const tk = sender.knownTasks?.[message.payload.taskId];
+        if (tk) {
+          tk.claimedBy = message.payload.ownerRobotId;
+          tk.status = 'CLAIMED';
+          tk.allocationState = 'CLAIMED';
+        }
+      }
     }
 
     if (message.type !== 'HEARTBEAT') {
       try {
-        const bodyText = typeof message.payload === 'string' ? message.payload : message.payload?.body || message.payload?.status || message.type;
-        const category = (message.type.startsWith('TASK_') ? 'TASK' : message.type === 'STATUS_UPDATE' ? 'SYSTEM' : 'COORDINATION') as any;
-        const warehouseStore = require('../../store/warehouseStore').useWarehouseStore.getState();
-        warehouseStore.addCommunication({
-          id: `COMM-${message.timestamp}-${Math.random().toString(36).substring(2, 7)}`,
-          timestamp: message.timestamp,
-          sender: message.senderId,
-          receiver: message.receiverId,
-          category,
-          priority: 'NORMAL',
-          message: `[${message.type}] ${bodyText}`,
-        });
+        let isEligibleForGlobalLog = true;
+
+        // Suppress routine status updates from cluttering logs unless they indicate meaningful events
+        if (message.type === 'STATUS_UPDATE') {
+          isEligibleForGlobalLog = Boolean(message.payload?.body || message.payload?.isSignificant);
+        }
+
+        if (isEligibleForGlobalLog) {
+          const bodyText = typeof message.payload === 'string' ? message.payload : message.payload?.body || message.payload?.status || message.type;
+          const category = (
+            message.type.startsWith('TASK_') || message.type === 'CONSENSUS'
+              ? 'TASK'
+              : message.type === 'STATUS_UPDATE'
+              ? 'SYSTEM'
+              : message.type === 'EMERGENCY'
+              ? 'SAFETY'
+              : message.type === 'ROBOT_FAILURE'
+              ? 'FAILURE'
+              : message.type === 'TASK_RECOVERY_ANNOUNCEMENT' || message.type === 'TASK_HANDOVER_REQUEST'
+              ? 'RECOVERY'
+              : 'COORDINATION'
+          ) as any;
+
+          const isUrgent = message.payload?.task?.priority === 'URGENT' || (typeof bodyText === 'string' && bodyText.includes('URGENT'));
+          const priority = (
+            message.type === 'EMERGENCY' || message.type === 'ROBOT_FAILURE'
+              ? 'CRITICAL'
+              : message.type === 'CONFLICT_DETECTED' || message.type === 'YIELD_REQUEST'
+              ? 'WARNING'
+              : isUrgent
+              ? 'IMPORTANT'
+              : 'NORMAL'
+          ) as any;
+
+          const warehouseStore = require('../../store/warehouseStore').useWarehouseStore.getState();
+          warehouseStore.addCommunication({
+            id: `COMM-${message.timestamp}-${Math.random().toString(36).substring(2, 7)}`,
+            timestamp: message.timestamp,
+            sender: message.senderId,
+            receiver: message.receiverId,
+            category,
+            priority,
+            message: `[${message.type}] ${bodyText}`,
+          });
+        }
       } catch (e) {}
     }
 
@@ -454,7 +519,7 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
               timestamp: message.timestamp,
             };
 
-            // Fix 5: Asynchronous consensus check
+            // Fix 5: Asynchronous consensus check with majority fallback & tie breaking
             const warehouseStoreState = require('../../store/warehouseStore').useWarehouseStore.getState();
             const onlineNodesCount = Array.from(this.nodes.values()).filter((n) => {
               if (!n.isOnline) return false;
@@ -465,26 +530,65 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
             const proposals = Object.values(taskKnowledge.peerProposals);
             const expectedProposalsCount = Math.max(1, onlineNodesCount);
 
-            const unanimousConsensus = proposals.length >= expectedProposalsCount && proposals.every((p) => p.proposedWinnerId === proposedWinnerId);
-            console.log(`[P2P] consensus check by ${targetNode.robotId} for ${taskId}: proposals=${proposals.length}/${expectedProposalsCount} unanimous=${unanimousConsensus}`);
+            // Tally proposal votes
+            const proposalCounts: Record<string, number> = {};
+            proposals.forEach((p) => {
+              if (p.proposedWinnerId) {
+                proposalCounts[p.proposedWinnerId] = (proposalCounts[p.proposedWinnerId] || 0) + 1;
+              }
+            });
 
-            if (unanimousConsensus && !taskKnowledge.claimedBy) {
+            let consensusWinner: string | null = null;
+            if (proposals.length >= expectedProposalsCount && Object.keys(proposalCounts).length > 0) {
+              const sortedCandidates = Object.keys(proposalCounts).sort((a, b) => {
+                if (proposalCounts[b] !== proposalCounts[a]) {
+                  return proposalCounts[b] - proposalCounts[a];
+                }
+                return a.localeCompare(b);
+              });
+
+              const topCandidate = sortedCandidates[0];
+              const topVotes = proposalCounts[topCandidate];
+              const majorityThreshold = Math.ceil(expectedProposalsCount / 2);
+
+              if (topVotes >= majorityThreshold) {
+                consensusWinner = topCandidate;
+              }
+            }
+
+            console.log(`[P2P] consensus check by ${targetNode.robotId} for ${taskId}: proposals=${proposals.length}/${expectedProposalsCount} winner=${consensusWinner}`);
+
+            if (consensusWinner && !taskKnowledge.claimedBy) {
               taskKnowledge.allocationState = 'CONSENSUS';
+
+              // Peer nodes agree with candidate winner and send directed CONSENSUS ACCEPT
+              if (targetNode.robotId !== consensusWinner && !taskKnowledge.myConsensusSent) {
+                taskKnowledge.myConsensusSent = true;
+                setTimeout(() => {
+                  this.sendDirectMessage(targetNode.robotId, consensusWinner!, 'CONSENSUS', {
+                    taskId,
+                    proposedWinnerId: consensusWinner,
+                    allocationRound: taskKnowledge.allocationRound || 1,
+                    body: `CONSENSUS: ${taskId} | ACCEPT`,
+                  });
+                }, 0);
+              }
+
               const warehouseStoreState = require('../../store/warehouseStore').useWarehouseStore.getState();
               const myRobot = warehouseStoreState.robots.find((r: any) => r.id === targetNode.robotId);
               const isFreeToClaim = myRobot && (myRobot.state === 'WAITING' || myRobot.state === 'IDLE') && !myRobot.currentTask && !myRobot.currentTaskId;
 
-              if (targetNode.robotId === proposedWinnerId && isFreeToClaim) {
+              if (targetNode.robotId === consensusWinner && isFreeToClaim) {
                 console.log(`[P2P] task claimed by ${targetNode.robotId} for ${taskId}`);
-                taskKnowledge.claimedBy = proposedWinnerId;
+                taskKnowledge.claimedBy = consensusWinner;
                 taskKnowledge.status = 'CLAIMED';
                 taskKnowledge.allocationState = 'CLAIMED';
                 setTimeout(() => {
                   this.broadcastMessage(targetNode.robotId, 'TASK_CLAIMED', {
                     taskId,
-                    ownerRobotId: proposedWinnerId,
+                    ownerRobotId: consensusWinner,
                     allocationRound: taskKnowledge.allocationRound || 1,
-                    body: `TASK_CLAIMED: Task ${taskId} claimed by ${proposedWinnerId} via P2P Consensus (Round ${taskKnowledge.allocationRound || 1})!`,
+                    body: `TASK_CLAIMED: Task ${taskId} claimed by ${consensusWinner} via P2P Consensus (Round ${taskKnowledge.allocationRound || 1})!`,
                   });
                 }, 0);
               }
@@ -493,50 +597,60 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
         }
       }
 
-      // Handle TASK_CLAIMED: Synchronize local & global task ownership
+      // Handle TASK_CLAIMED: Synchronize local & global task ownership (Idempotent)
       if (message.type === 'TASK_CLAIMED' && message.payload?.taskId) {
         const taskId = message.payload.taskId;
         const ownerRobotId = message.payload.ownerRobotId;
         console.log(`[P2P] TASK_CLAIMED received by ${targetNode.robotId} for ${taskId} (owner: ${ownerRobotId})`);
+        
         targetNode.knownTasks = targetNode.knownTasks || {};
+        const wasAlreadyClaimed = targetNode.knownTasks[taskId]?.claimedBy === ownerRobotId && targetNode.knownTasks[taskId]?.allocationState === 'CLAIMED';
+
         if (targetNode.knownTasks[taskId]) {
           targetNode.knownTasks[taskId].claimedBy = ownerRobotId;
           targetNode.knownTasks[taskId].status = 'CLAIMED';
           targetNode.knownTasks[taskId].allocationState = 'CLAIMED';
         }
 
-        // Synchronize global taskStore & warehouseStore ownership
-        try {
-          const useTaskStore = require('../../store/taskStore').useTaskStore.getState;
-          const useWarehouseStore = require('../../store/warehouseStore').useWarehouseStore.getState;
-          
-          const taskStore = useTaskStore();
-          console.log(`[P2P] assignment result triggering for ${taskId}`);
-          taskStore.receiveAssignmentResult(taskId, ownerRobotId);
+        // Synchronize global taskStore & warehouseStore ownership ONLY if not already processed idempotently
+        if (!wasAlreadyClaimed) {
+          try {
+            const useTaskStore = require('../../store/taskStore').useTaskStore.getState;
+            const useWarehouseStore = require('../../store/warehouseStore').useWarehouseStore.getState;
+            
+            const taskStore = useTaskStore();
+            const globalTask = taskStore.getTask(taskId);
+            const alreadyGloballyAssigned = globalTask && globalTask.assigned_robot_id === ownerRobotId && (globalTask.status === 'ASSIGNED' || globalTask.status === 'IN_PROGRESS');
 
-          const warehouseStore = useWarehouseStore();
-          const task = taskStore.getTask(taskId);
-          if (task && task.handoverAudit?.originalRobotId) {
-            const executeHandoverAssignment = require('../recovery/TaskHandoverManager').executeHandoverAssignment;
-            executeHandoverAssignment(
-              ownerRobotId,
-              task,
-              task.handoverAudit.handoverPhase || 'TO_PICKUP',
-              task.handoverAudit.originalRobotId,
-              task.handoverAudit.handoverReason
-            );
-          } else if (task && task.recoveryAudit?.failedRobotId) {
-            const executeRecoveryAssignment = require('../recovery/FailureRecoveryManager').executeRecoveryAssignment;
-            executeRecoveryAssignment(
-              ownerRobotId,
-              task,
-              task.recoveryAudit.recoveryPhase || 'TO_PICKUP',
-              message.payload?.lastKnownPosition || { col: 5, row: 5 }
-            );
-          } else if (task) {
-            warehouseStore.assignTaskToRobot(ownerRobotId, task);
-          }
-        } catch (e) {}
+            if (!alreadyGloballyAssigned) {
+              console.log(`[P2P] assignment result triggering for ${taskId}`);
+              taskStore.receiveAssignmentResult(taskId, ownerRobotId);
+
+              const warehouseStore = useWarehouseStore();
+              const task = taskStore.getTask(taskId);
+              if (task && task.handoverAudit?.originalRobotId) {
+                const executeHandoverAssignment = require('../recovery/TaskHandoverManager').executeHandoverAssignment;
+                executeHandoverAssignment(
+                  ownerRobotId,
+                  task,
+                  task.handoverAudit.handoverPhase || 'TO_PICKUP',
+                  task.handoverAudit.originalRobotId,
+                  task.handoverAudit.handoverReason
+                );
+              } else if (task && task.recoveryAudit?.failedRobotId) {
+                const executeRecoveryAssignment = require('../recovery/FailureRecoveryManager').executeRecoveryAssignment;
+                executeRecoveryAssignment(
+                  ownerRobotId,
+                  task,
+                  task.recoveryAudit.recoveryPhase || 'TO_PICKUP',
+                  message.payload?.lastKnownPosition || { col: 5, row: 5 }
+                );
+              } else if (task) {
+                warehouseStore.assignTaskToRobot(ownerRobotId, task);
+              }
+            }
+          } catch (e) {}
+        }
       }
 
     };

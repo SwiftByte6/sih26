@@ -533,6 +533,12 @@ export const useTaskStore = create<TaskState>()(
       tasks: [...state.tasks, newTask],
     }));
 
+    try {
+      const { announcedTaskIds, announcedTaskTimestamps } = require('./warehouseStore');
+      announcedTaskIds.delete(generatedId);
+      announcedTaskTimestamps.delete(generatedId);
+    } catch (e) {}
+
     notifyListeners('TASK_CREATED', newTask);
     return { success: true, taskId: generatedId };
   },
@@ -657,6 +663,10 @@ export const useTaskStore = create<TaskState>()(
       const warehouseStore = require('./warehouseStore').useWarehouseStore.getState();
       if (warehouseStore && warehouseStore.removeAnnouncedTaskId) {
         warehouseStore.removeAnnouncedTaskId(taskId);
+      }
+      const p2pStore = require('./p2pStore').useP2PStore.getState();
+      if (p2pStore && p2pStore.removeTaskFromAllNodes) {
+        p2pStore.removeTaskFromAllNodes(taskId);
       }
     } catch (e) {}
     const task = get().getTask(taskId);
@@ -854,8 +864,24 @@ export const useTaskStore = create<TaskState>()(
     return JSON.stringify(payload, null, 2);
   },
 
-  resetTasks: () => set({ tasks: INITIAL_DEMO_TASKS }),
-  clearTasks: () => set({ tasks: [] }),
+  resetTasks: () => {
+    try {
+      const { announcedTaskIds, announcedTaskTimestamps, taskAllocationRounds } = require('./warehouseStore');
+      announcedTaskIds.clear();
+      announcedTaskTimestamps.clear();
+      taskAllocationRounds.clear();
+    } catch (e) {}
+    set({ tasks: INITIAL_DEMO_TASKS });
+  },
+  clearTasks: () => {
+    try {
+      const { announcedTaskIds, announcedTaskTimestamps, taskAllocationRounds } = require('./warehouseStore');
+      announcedTaskIds.clear();
+      announcedTaskTimestamps.clear();
+      taskAllocationRounds.clear();
+    } catch (e) {}
+    set({ tasks: [] });
+  },
   loadTasks: (jsonContent) => {
     try {
       const parsed = JSON.parse(jsonContent);

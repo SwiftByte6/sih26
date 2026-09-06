@@ -120,22 +120,24 @@ export function determineCandidateWinner(
 
 export function normalizeLocString(str: string): string {
   if (!str) return '';
-  return str
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, ' ')
-    .replace(/[^a-z0-9\s\-]/gi, '');
+  return str.toLowerCase().replace(/[^a-z0-9]/gi, '');
 }
 
 const LOCATION_ALIAS_MAP: Record<string, string> = {
-  'pickup a': 'POI1',
-  'pickup b': 'POI2',
-  'drop a': 'POI1',
-  'drop b': 'POI2',
-  'storage-01': 'POI4',
-  'storage-02': 'POI5',
-  'packing area b': 'POI6',
-  'packing b': 'POI6',
+  'pickupa': 'POI1',
+  'pickupb': 'POI2',
+  'dropa': 'POI1',
+  'dropb': 'POI2',
+  'drop3': 'POI2',
+  'drop2': 'POI2',
+  'drop1': 'POI1',
+  'storage01': 'POI4',
+  'storage02': 'POI5',
+  'storage1': 'POI4',
+  'storage2': 'POI5',
+  'packingareab': 'POI6',
+  'packingb': 'POI6',
+  'packingarea': 'POI6',
   'p3': 'POI7',
   'p1': 'POI8',
   'd5': 'POI2',
@@ -151,8 +153,10 @@ export function resolveLocationCoordinates(
   const rawNorm = locString.toLowerCase().trim();
   const norm = normalizeLocString(locString);
 
-  // 1. Exact POI ID match
-  const poiById = pois.find((p) => normalizeLocString(p.id) === norm || p.id.toLowerCase().trim() === rawNorm);
+  // 1. Exact POI ID match (normalized or raw)
+  const poiById = pois.find(
+    (p) => normalizeLocString(p.id) === norm || p.id.toLowerCase().trim() === rawNorm
+  );
   if (poiById) return { col: poiById.col, row: poiById.row, label: poiById.label };
 
   // 2. Exact normalized POI label match
@@ -166,27 +170,43 @@ export function resolveLocationCoordinates(
   if (aliasTargetId) {
     const targetNorm = normalizeLocString(aliasTargetId);
     const aliasedPoi = pois.find(
-      (p) => normalizeLocString(p.id) === targetNorm || p.id.toLowerCase().trim() === aliasTargetId.toLowerCase().trim()
+      (p) => normalizeLocString(p.id) === targetNorm || normalizeLocString(p.label) === targetNorm
     );
     if (aliasedPoi) return { col: aliasedPoi.col, row: aliasedPoi.row, label: aliasedPoi.label };
 
     const aliasedShelf = shelves.find(
-      (s) => normalizeLocString(s.id) === targetNorm || s.id.toLowerCase().trim() === aliasTargetId.toLowerCase().trim()
+      (s) => normalizeLocString(s.id) === targetNorm || normalizeLocString(s.id) === `s${targetNorm}`
     );
     if (aliasedShelf) return { col: aliasedShelf.col, row: aliasedShelf.row - 1, label: aliasedShelf.id };
   }
 
   // 4. Exact shelf ID match
-  const shelfById = shelves.find((s) => normalizeLocString(s.id) === norm || s.id.toLowerCase().trim() === rawNorm);
+  const shelfById = shelves.find(
+    (s) => normalizeLocString(s.id) === norm || s.id.toLowerCase().trim() === rawNorm
+  );
   if (shelfById) return { col: shelfById.col, row: shelfById.row - 1, label: shelfById.id };
 
-  // 5. Exact normalized shelf label match
-  const shelfByLabel = shelves.find(
-    (s) =>
-      normalizeLocString(s.id) === normalizeLocString(`shelf ${norm}`) ||
-      normalizeLocString(s.id) === normalizeLocString(`shelf-${norm}`)
+  // 5. Shelf normalized prefix/suffix variations (e.g. 'shelf 5', 's5', 'shelf-5')
+  const numMatch = norm.match(/\d+/);
+  if (numMatch) {
+    const shelfNum = numMatch[0];
+    const shelfByNum = shelves.find(
+      (s) => normalizeLocString(s.id) === `s${shelfNum}` || normalizeLocString(s.id) === `shelf${shelfNum}`
+    );
+    if (shelfByNum) return { col: shelfByNum.col, row: shelfByNum.row - 1, label: shelfByNum.id };
+
+    // Numbered POI match fallback (e.g. 'PICKUP 6', 'POI 6', 'P6')
+    const poiByNum = pois.find(
+      (p) => normalizeLocString(p.id) === `poi${shelfNum}` || normalizeLocString(p.id) === `p${shelfNum}`
+    );
+    if (poiByNum) return { col: poiByNum.col, row: poiByNum.row, label: poiByNum.label };
+  }
+
+  // 6. Substring containment match on POI label or ID
+  const poiContains = pois.find(
+    (p) => normalizeLocString(p.label).includes(norm) || norm.includes(normalizeLocString(p.label))
   );
-  if (shelfByLabel) return { col: shelfByLabel.col, row: shelfByLabel.row - 1, label: shelfByLabel.id };
+  if (poiContains) return { col: poiContains.col, row: poiContains.row, label: poiContains.label };
 
   return null;
 }
