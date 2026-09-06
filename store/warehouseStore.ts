@@ -13,6 +13,7 @@ import {
   Wall,
   AppMode,
   ViewMode,
+  CameraMode,
   TransformMode,
   PlaceableType,
   SelectedItemType,
@@ -218,6 +219,10 @@ interface WarehouseState {
   setPan: (pan: { x: number; y: number }) => void;
   toggleGrid: () => void;
   setViewMode: (mode: ViewMode) => void;
+  cameraMode: CameraMode;
+  selectedCameraRobotId: string | null;
+  setCameraMode: (mode: CameraMode, robotId?: string | null) => void;
+  setSelectedCameraRobotId: (robotId: string | null) => void;
   setAppMode: (mode: AppMode) => void;
   setTransformMode: (mode: TransformMode) => void;
   setPendingPlaceType: (type: PlaceableType | null, assetUrl?: string | null) => void;
@@ -535,6 +540,37 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
   },
 
   setViewMode: (mode) => set({ viewMode: mode }),
+  cameraMode: 'OVERVIEW',
+  selectedCameraRobotId: null,
+  setCameraMode: (mode, robotId = null) => {
+    if (mode === 'OVERVIEW') {
+      set({ cameraMode: 'OVERVIEW', selectedCameraRobotId: null });
+      return;
+    }
+    const state = get();
+    let targetId = robotId ?? state.selectedCameraRobotId;
+    if (!targetId || !state.robots.some((r) => r.id === targetId)) {
+      targetId = state.robots.length > 0 ? state.robots[0].id : null;
+    }
+    if (!targetId) {
+      set({ cameraMode: 'OVERVIEW', selectedCameraRobotId: null });
+      return;
+    }
+    set({ cameraMode: mode, selectedCameraRobotId: targetId });
+  },
+  setSelectedCameraRobotId: (robotId) => {
+    if (!robotId) {
+      set({ cameraMode: 'OVERVIEW', selectedCameraRobotId: null });
+      return;
+    }
+    const state = get();
+    if (!state.robots.some((r) => r.id === robotId)) {
+      set({ cameraMode: 'OVERVIEW', selectedCameraRobotId: null });
+      return;
+    }
+    const nextMode = state.cameraMode === 'OVERVIEW' ? 'FOLLOW' : state.cameraMode;
+    set({ selectedCameraRobotId: robotId, cameraMode: nextMode });
+  },
   setTransformMode: (mode) => set({ transformMode: mode }),
   setPendingPlaceType: (type, assetUrl) => set({ pendingPlaceType: type, pendingAssetUrl: assetUrl ?? null }),
   setSimSpeed: (speed) => set({ simSpeed: Math.max(0.25, Math.min(4, speed)) }),
@@ -915,6 +951,8 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
       activeCommLinks: state.activeCommLinks.filter((l) => l.from !== id && l.to !== id),
       selectedItemId: state.selectedItemId === id ? null : state.selectedItemId,
       selectedItemType: state.selectedItemId === id ? null : state.selectedItemType,
+      cameraMode: state.selectedCameraRobotId === id ? 'OVERVIEW' : state.cameraMode,
+      selectedCameraRobotId: state.selectedCameraRobotId === id ? null : state.selectedCameraRobotId,
     }));
   },
 

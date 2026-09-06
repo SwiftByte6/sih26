@@ -36,13 +36,6 @@
       "height": 2
     },
     {
-      "id": "S2",
-      "col": 13,
-      "row": 5,
-      "width": 6,
-      "height": 2
-    },
-    {
       "id": "S3",
       "col": 21,
       "row": 5,
@@ -55,22 +48,6 @@
       "row": 15,
       "width": 6,
       "height": 2
-    },
-    {
-      "id": "S5",
-      "col": 14,
-      "row": 15,
-      "width": 6,
-      "height": 2,
-      "posY": 1.7297567930384616,
-      "rotX": 0,
-      "rotY": 0,
-      "rotZ": 0,
-      "scale": {
-        "x": 1,
-        "y": 1,
-        "z": 1
-      }
     },
     {
       "id": "S6",
@@ -153,20 +130,43 @@
         "y": 1,
         "z": 1
       },
-      "col": 22,
-      "row": 29,
+      "col": 23,
+      "row": 31,
       "width": 6,
       "height": 2,
       "id": "S-011"
+    },
+    {
+      "col": 15,
+      "row": 5,
+      "width": 6,
+      "height": 2,
+      "id": "S-013"
+    },
+    {
+      "col": 15,
+      "row": 16,
+      "width": 6,
+      "height": 2,
+      "id": "S-014"
     }
   ],
   "obstacles": [
     {
       "id": "O1",
-      "col": 15,
-      "row": 18,
+      "col": 11,
+      "row": 20,
       "width": 2,
-      "height": 2
+      "height": 2,
+      "posY": 0,
+      "rotX": 0,
+      "rotY": 0,
+      "rotZ": 0,
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
     },
     {
       "posY": 0,
@@ -205,6 +205,23 @@
     {
       "posY": 0,
       "rotX": 0,
+      "rotY": 0,
+      "rotZ": 0,
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "col": 36,
+      "row": 10,
+      "width": 2,
+      "height": 2,
+      "assetUrl": "/assets/electric_vehicle_charging_point_trydan.glb",
+      "id": "OBS-004"
+    },
+    {
+      "posY": 0,
+      "rotX": 0,
       "rotY": 180,
       "rotZ": 0,
       "scale": {
@@ -218,6 +235,23 @@
       "height": 2,
       "assetUrl": "/assets/worn_warehouse_shelf.glb",
       "id": "OBS-006"
+    },
+    {
+      "posY": 0,
+      "rotX": 0,
+      "rotY": 0,
+      "rotZ": 0,
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "col": 10,
+      "row": 7,
+      "width": 2,
+      "height": 2,
+      "assetUrl": "/assets/electric_vehicle_charging_point_trydan.glb",
+      "id": "OBS-007"
     },
     {
       "posY": 0,
@@ -356,19 +390,12 @@
       "row": 38,
       "label": "CHARGER 1",
       "posY": 0,
-      "rotY": 180,
+      "rotY": 0,
       "scale": {
         "x": 1.3,
         "y": 1.3,
         "z": 1.3
       }
-    },
-    {
-      "id": "POI4",
-      "type": "PICKUP",
-      "col": 5,
-      "row": 4,
-      "label": "Storage-01"
     },
     {
       "id": "POI5",
@@ -383,6 +410,13 @@
       "col": 5,
       "row": 14,
       "label": "Packing Area B"
+    },
+    {
+      "id": "POI7",
+      "type": "PICKUP",
+      "col": 13,
+      "row": 14,
+      "label": "P3"
     },
     {
       "posY": 0,
@@ -415,20 +449,6 @@
       "type": "DROP",
       "label": "DROP 3",
       "id": "POI-010"
-    },
-    {
-      "posY": 0,
-      "rotY": 180,
-      "scale": {
-        "x": 1.3,
-        "y": 1.3,
-        "z": 1.3
-      },
-      "col": 30,
-      "row": 38,
-      "type": "CHARGER",
-      "label": "CHARGER 2",
-      "id": "POI-011"
     }
   ],
   "pallets": [
@@ -474,8 +494,8 @@
         "y": 1.6,
         "z": 1.7
       },
-      "col": 1,
-      "row": 10,
+      "col": 27,
+      "row": 6,
       "width": 1,
       "height": 1,
       "id": "PAL-003"
@@ -485,67 +505,49 @@
     {
       "id": "R1",
       "label": "AMR-01",
-      "col": 26,
-      "row": 38,
-      "state": "IDLE",
-      "battery": 100,
+      "col": 5,
+      "row": 4,
+      "state": "WAITING",
+      "battery": 17.7000000000004,
       "speed": 1.4,
       "currentTask": null,
       "currentTaskId": null,
       "taskPhase": null,
       "pickupPoint": {
         "col": 5,
-        "row": 14,
-        "label": "S4"
+        "row": 4,
+        "label": "Storage-01"
       },
       "dropPoint": {
         "col": 5,
-        "row": 14,
-        "label": "Packing Area B"
+        "row": 4,
+        "label": "S1"
       },
       "path": [],
-      "recoveryStatus": "RECOVERED",
-      "chargingState": "COMPLETED",
-      "targetChargerId": null,
-      "chargingPoint": null,
-      "chargingStartTime": 1788724415466,
-      "interruptedTaskId": null
+      "recoveryStatus": "RECOVERED"
     },
     {
       "id": "R2",
       "label": "AMR-02",
-      "col": 13,
-      "row": 4,
+      "col": 26,
+      "row": 25,
       "state": "WAITING",
-      "battery": 85.30000000000014,
+      "battery": 15.000000000000082,
       "speed": 0,
       "currentTask": null,
       "currentTaskId": null,
       "taskPhase": null,
-      "pickupPoint": {
-        "col": 21,
-        "row": 14,
-        "label": "P1"
-      },
-      "dropPoint": {
-        "col": 13,
-        "row": 4,
-        "label": "Storage-02"
-      },
-      "path": [],
-      "chargingState": "COMPLETED",
-      "targetChargerId": null,
-      "chargingPoint": null,
-      "chargingStartTime": 1788724315251,
-      "interruptedTaskId": null
+      "pickupPoint": null,
+      "dropPoint": null,
+      "path": []
     },
     {
       "id": "R3",
       "label": "AMR-03",
-      "col": 4,
-      "row": 4,
+      "col": 24,
+      "row": 25,
       "state": "WAITING",
-      "battery": 45.00000000000051,
+      "battery": 48.30000000000048,
       "speed": 0,
       "currentTask": null,
       "currentTaskId": null,
@@ -556,9 +558,9 @@
         "label": "PICKUP A"
       },
       "dropPoint": {
-        "col": 5,
-        "row": 4,
-        "label": "Storage-01"
+        "col": 24,
+        "row": 25,
+        "label": "DROP B"
       },
       "path": []
     },
@@ -572,15 +574,54 @@
         "y": 1,
         "z": 1
       },
-      "col": 46,
-      "row": 10,
+      "col": 4,
+      "row": 3,
       "label": "AMR-04",
-      "state": "WAITING",
-      "battery": 25.000000000000625,
+      "state": "IDLE",
+      "battery": 19.900000000000613,
       "speed": 1.2,
       "currentTask": null,
       "path": [],
       "id": "R-004",
+      "currentTaskId": null,
+      "taskPhase": null,
+      "pickupPoint": {
+        "col": 8,
+        "row": 25,
+        "label": "PICKUP A"
+      },
+      "dropPoint": {
+        "col": 5,
+        "row": 4,
+        "label": "Storage-01"
+      },
+      "sensingRadius": 5,
+      "payloadCapacity": 20,
+      "currentLoad": 0,
+      "temperature": 35,
+      "signalStrength": 100,
+      "deliveryCapability": "Standard Transport"
+    },
+    {
+      "posY": 0,
+      "rotX": 0,
+      "rotY": 0,
+      "rotZ": 0,
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "col": 46,
+      "row": 10,
+      "label": "AMR-07",
+      "state": "WAITING",
+      "battery": 24.400000000000624,
+      "speed": 1.2,
+      "currentTask": null,
+      "path": [],
+      "assetUrl": "/assets/robot_love_death_and_robots.glb",
+      "id": "R-007",
       "currentTaskId": null,
       "taskPhase": null,
       "pickupPoint": {
@@ -610,50 +651,11 @@
         "y": 1,
         "z": 1
       },
-      "col": 5,
-      "row": 14,
+      "col": 46,
+      "row": 10,
       "label": "AMR-07",
       "state": "WAITING",
-      "battery": 37.300000000000594,
-      "speed": 1.2,
-      "currentTask": null,
-      "path": [],
-      "assetUrl": "/assets/robot_love_death_and_robots.glb",
-      "id": "R-007",
-      "currentTaskId": null,
-      "taskPhase": null,
-      "pickupPoint": {
-        "col": 21,
-        "row": 4,
-        "label": "S3"
-      },
-      "dropPoint": {
-        "col": 5,
-        "row": 14,
-        "label": "Packing Area B"
-      },
-      "sensingRadius": 5,
-      "payloadCapacity": 20,
-      "currentLoad": 0,
-      "temperature": 35,
-      "signalStrength": 100,
-      "deliveryCapability": "Standard Transport"
-    },
-    {
-      "posY": 0,
-      "rotX": 0,
-      "rotY": 0,
-      "rotZ": 0,
-      "scale": {
-        "x": 1,
-        "y": 1,
-        "z": 1
-      },
-      "col": 5,
-      "row": 3,
-      "label": "AMR-07",
-      "state": "WAITING",
-      "battery": 42.70000000000054,
+      "battery": 49.00000000000048,
       "speed": 1.2,
       "currentTask": null,
       "path": [],
@@ -662,14 +664,14 @@
       "currentTaskId": null,
       "taskPhase": null,
       "pickupPoint": {
-        "col": 5,
-        "row": 4,
-        "label": "Storage-01"
+        "col": 43,
+        "row": 10,
+        "label": "PICKUP 6"
       },
       "dropPoint": {
-        "col": 5,
-        "row": 4,
-        "label": "S1"
+        "col": 46,
+        "row": 10,
+        "label": "DROP 3"
       },
       "sensingRadius": 5,
       "payloadCapacity": 20,

@@ -42,7 +42,7 @@ export const Shelf2D: React.FC<{ shelf: Shelf }> = ({ shelf }) => {
         />
       )}
       {shelfImg ? (
-        <KonvaImage image={shelfImg} width={w} height={h} />
+        <KonvaImage image={shelfImg} x={w} width={h} height={w} rotation={90} />
       ) : (
         <Rect width={w} height={h} fill="#30363A" stroke="#454C50" strokeWidth={1} cornerRadius={2} />
       )}
