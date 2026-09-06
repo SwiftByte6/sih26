@@ -9,18 +9,20 @@ import { Shelf2D } from './Shelf2D';
 import { Poi2D } from './Poi2D';
 import { Pallet2D } from './Pallet2D';
 import { useSvgImage } from '../../lib/useSvgImage';
-import { ZoomIn, ZoomOut, Maximize2, RotateCcw } from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize2, RotateCcw, Hand } from 'lucide-react';
 
 export const WarehouseMap: React.FC = () => {
   const {
     shelves, paths, pois, robots, obstacles, intersections, pallets, walls,
     selectedItemId, setSelectedItem, scale, pan, showGrid, gridRows, gridCols, cellSize,
-    activeCommLinks, placeAtCell, pendingPlaceType, appMode, activeTool, setPan, setScale,
+    activeCommLinks, placeAtCell, pendingPlaceType, appMode, activeTool, setActiveTool, setPan, setScale,
     zoomIn, zoomOut, zoomFit,
   } = useWarehouseStore();
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 800, height: 600 });
+  const [isDraggingStage, setIsDraggingStage] = useState(false);
+  const [isSpacePressed, setIsSpacePressed] = useState(false);
 
   const bgPng = useSvgImage('/warehouse/warehose-background.png');
   const bgAssetPng = useSvgImage('/assets/warehouse/warehose-background.png');
@@ -35,6 +37,28 @@ export const WarehouseMap: React.FC = () => {
     const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
+  }, []);
+
+  // Handle Spacebar for temporary pan mode
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (e.code === 'Space' && !e.repeat) {
+        setIsSpacePressed(true);
+      }
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        setIsSpacePressed(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
   }, []);
 
   const gridLines = [];
@@ -68,10 +92,32 @@ export const WarehouseMap: React.FC = () => {
   const mapW = gridCols * cellSize;
   const mapH = gridRows * cellSize;
 
+  const isPlacing = appMode === 'BUILDER' && Boolean(pendingPlaceType);
+  const isPanActive = activeTool === 'pan' || isSpacePressed;
+  const canDragStage = !isPlacing;
+
+  const getCursor = () => {
+    if (isDraggingStage) return 'grabbing';
+    if (isPlacing) return 'crosshair';
+    if (isPanActive) return 'grab';
+    if (appMode === 'PLAY') return 'grab';
+    return 'default';
+  };
+
   return (
-    <div ref={containerRef} className="w-full h-full bg-[#e2e8f0] overflow-hidden relative">
+    <div ref={containerRef} className="w-full h-full bg-[#e2e8f0] overflow-hidden relative select-none">
       {/* Floating Map Controls Toolbar */}
       <div className="absolute top-3 left-3 bg-panel/90 backdrop-blur-md border border-border rounded-md p-1 flex items-center gap-1 z-30 shadow-md">
+        <button
+          onClick={() => setActiveTool(activeTool === 'pan' ? 'select' : 'pan')}
+          title={activeTool === 'pan' ? "Pan Tool Active (Click to switch to Select - V)" : "Pan Tool (Drag Map) - Shortcut: H or hold Space"}
+          className={`p-1.5 rounded-sm transition-colors ${
+            activeTool === 'pan' ? 'bg-accent text-white shadow-xs' : 'text-text hover:text-accent hover:bg-app'
+          }`}
+        >
+          <Hand size={16} />
+        </button>
+        <div className="w-px h-4 bg-border mx-0.5" />
         <button
           onClick={zoomIn}
           title="Zoom In (+)"
@@ -105,20 +151,33 @@ export const WarehouseMap: React.FC = () => {
         </button>
       </div>
 
+      {/* Map Drag & Interaction Hint */}
+      <div className="absolute bottom-2 right-3 z-30 pointer-events-none bg-panel/80 backdrop-blur-xs border border-border/80 rounded px-2 py-0.5 text-[10px] text-muted flex items-center gap-2 shadow-xs">
+        <span>🖱️ Drag canvas / Hold Space to pan</span>
+        <span className="text-border">|</span>
+        <span>🔍 Scroll to zoom</span>
+      </div>
+
       {size.width > 0 && size.height > 0 && (
         <Stage
           width={size.width}
           height={size.height}
           style={{
             background: '#e2e8f0',
-            cursor: activeTool === 'pan' ? 'grab' : 'default',
+            cursor: getCursor(),
           }}
           scale={{ x: scale, y: scale }}
           x={pan.x}
           y={pan.y}
-          draggable={activeTool === 'pan'}
+          draggable={canDragStage}
+          onDragStart={(e) => {
+            if (e.target === e.target.getStage()) {
+              setIsDraggingStage(true);
+            }
+          }}
           onDragEnd={(e) => {
             if (e.target === e.target.getStage()) {
+              setIsDraggingStage(false);
               setPan({ x: e.target.x(), y: e.target.y() });
             }
           }}
@@ -163,6 +222,8 @@ export const WarehouseMap: React.FC = () => {
                 width={mapW}
                 height={mapH}
                 onClick={(e) => {
+                  if (e.target.getStage()?.isDragging()) return;
+                  if (activeTool === 'pan' || isSpacePressed) return;
                   e.cancelBubble = true;
                   const pos = e.target.getStage()?.getPointerPosition();
                   if (!pos) return;
@@ -183,6 +244,21 @@ export const WarehouseMap: React.FC = () => {
                 width={mapW}
                 height={mapH}
                 fill="#cbd5e1"
+                onClick={(e) => {
+                  if (e.target.getStage()?.isDragging()) return;
+                  if (activeTool === 'pan' || isSpacePressed) return;
+                  e.cancelBubble = true;
+                  const pos = e.target.getStage()?.getPointerPosition();
+                  if (!pos) return;
+                  const col = Math.floor((pos.x - pan.x) / scale / cellSize);
+                  const row = Math.floor((pos.y - pan.y) / scale / cellSize);
+                  if (appMode === 'BUILDER' && pendingPlaceType) {
+                    const { pendingAssetUrl } = useWarehouseStore.getState();
+                    placeAtCell(pendingPlaceType, row, col, pendingAssetUrl);
+                    return;
+                  }
+                  setSelectedItem('FLOOR', 'FLOOR');
+                }}
               />
             )}
             {showGrid && gridLines}
@@ -283,13 +359,13 @@ export const WarehouseMap: React.FC = () => {
               <AmrRobot key={robot.id} robot={robot} />
             ))}
 
-            {activeCommLinks.filter((l) => l.to !== 'ALL' && l.to !== 'SYSTEM').map((link) => {
+            {activeCommLinks.filter((l) => l.to !== 'ALL' && l.to !== 'SYSTEM').map((link, idx) => {
               const fromRobot = robots.find((r) => r.id === link.from);
               const toRobot = robots.find((r) => r.id === link.to);
               if (!fromRobot || !toRobot) return null;
               return (
                 <Line
-                  key={`${link.from}-${link.to}-${link.expires}`}
+                  key={`${link.from}-${link.to}-${link.expires}-${idx}`}
                   points={[
                     fromRobot.col * cellSize + cellSize / 2,
                     fromRobot.row * cellSize + cellSize / 2,
