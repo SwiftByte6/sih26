@@ -460,9 +460,11 @@ const notifyListeners = (type: TaskEventType, task: Task, metadata?: Record<stri
 
 interface TaskState {
   tasks: Task[];
-  activeView: 'WAREHOUSE' | 'TASKS' | 'ROBOTS';
+  activeView: 'WAREHOUSE' | 'TASKS' | 'ROBOTS' | 'ANALYSIS';
+  analyticsTab: 'fleet' | 'latency' | 'p2p' | 'collision';
 
-  setActiveView: (view: 'WAREHOUSE' | 'TASKS' | 'ROBOTS') => void;
+  setActiveView: (view: 'WAREHOUSE' | 'TASKS' | 'ROBOTS' | 'ANALYSIS') => void;
+  setAnalyticsTab: (tab: 'fleet' | 'latency' | 'p2p' | 'collision') => void;
 
   // Task Creation
   createTask: (taskData: Omit<Task, 'task_id' | 'created_time' | 'assigned_time' | 'started_time' | 'completed_time' | 'failed_time' | 'reassigned_count' | 'failure_reason' | 'status' | 'assigned_robot_id'>) => { success: boolean; taskId: string; error?: string };
@@ -508,8 +510,10 @@ export const useTaskStore = create<TaskState>()(
     (set, get) => ({
       tasks: INITIAL_DEMO_TASKS,
       activeView: 'WAREHOUSE',
+      analyticsTab: 'fleet',
 
       setActiveView: (view) => set({ activeView: view }),
+      setAnalyticsTab: (tab) => set({ analyticsTab: tab }),
 
   createTask: (taskData) => {
     const generatedId = generateNextTaskId(get().tasks);

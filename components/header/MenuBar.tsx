@@ -40,6 +40,7 @@ const MENU_CONFIG = [
 export const MenuBar: React.FC = () => {
   const activeView = useTaskStore((state) => state.activeView);
   const setActiveView = useTaskStore((state) => state.setActiveView);
+  const setAnalyticsTab = useTaskStore((state) => state.setAnalyticsTab);
   
   const setViewMode = useWarehouseStore((s) => s.setViewMode);
   const viewMode = useWarehouseStore((s) => s.viewMode);
@@ -75,6 +76,9 @@ export const MenuBar: React.FC = () => {
   }, []);
 
   const handleMenuClick = (menu: string) => {
+    if (menu === 'Analytics') {
+      setActiveView('ANALYSIS');
+    }
     setActiveMenu(activeMenu === menu ? null : menu);
   };
 
@@ -238,10 +242,34 @@ export const MenuBar: React.FC = () => {
       { label: 'Speed 4.0x', checked: simSpeed === 4.0, action: () => setSimSpeed(4.0) },
     ],
     Analytics: [
-      { label: 'Fleet Throughput & Efficiency' },
-      { label: 'Task Execution Latency' },
-      { label: 'P2P Network Messages' },
-      { label: 'Collision Logs' },
+      {
+        label: 'Fleet Throughput & Efficiency',
+        action: () => {
+          setAnalyticsTab('fleet');
+          setActiveView('ANALYSIS');
+        },
+      },
+      {
+        label: 'Task Execution Latency',
+        action: () => {
+          setAnalyticsTab('latency');
+          setActiveView('ANALYSIS');
+        },
+      },
+      {
+        label: 'P2P Network Messages',
+        action: () => {
+          setAnalyticsTab('p2p');
+          setActiveView('ANALYSIS');
+        },
+      },
+      {
+        label: 'Collision Avoidance Performance',
+        action: () => {
+          setAnalyticsTab('collision');
+          setActiveView('ANALYSIS');
+        },
+      },
     ],
     Help: [
       {
@@ -348,6 +376,17 @@ export const MenuBar: React.FC = () => {
         >
           <Cpu size={18} strokeWidth={1.8} />
           <span className="mt-0.5 leading-none">Robots</span>
+        </button>
+        <button
+          onClick={() => setActiveView('ANALYSIS')}
+          className={`px-3 py-1 text-[10px] font-semibold rounded-md transition-all flex flex-col items-center justify-center min-w-[72px] ${
+            activeView === 'ANALYSIS'
+              ? 'bg-accent text-white shadow-xs'
+              : 'text-muted hover:text-text hover:bg-toolbar'
+          }`}
+        >
+          <BarChart2 size={18} strokeWidth={1.8} />
+          <span className="mt-0.5 leading-none">Analytics</span>
         </button>
       </div>
     </div>

@@ -12,6 +12,7 @@ import { TaskManagementPanel } from '../components/task/TaskManagementPanel';
 import { RobotFleetSection } from '../components/robot/RobotFleetSection';
 import { ManageRobotsModal } from '../components/robot/ManageRobotsModal';
 import { ToastContainer } from '../components/ui/ToastContainer';
+import { AnalyticsPanel } from '../components/dashboard/AnalyticsPanel';
 import { useTaskStore } from '../store/taskStore';
 
 export default function SimulatorPage() {
@@ -56,6 +57,12 @@ export default function SimulatorPage() {
         {activeView === 'ROBOTS' && (
           <div className="absolute inset-0 z-30 bg-workspace flex flex-col overflow-hidden">
             <RobotFleetSection />
+          </div>
+        )}
+
+        {activeView === 'ANALYSIS' && (
+          <div className="absolute inset-0 z-30 bg-workspace flex flex-col overflow-hidden">
+            <AnalyticsPanel />
           </div>
         )}
 
