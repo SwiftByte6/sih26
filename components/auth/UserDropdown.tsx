@@ -54,6 +54,9 @@ export const UserDropdown: React.FC = () => {
 
   const handleSignOut = async () => {
     setDropdownOpen(false);
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('amr_project_started');
+    }
     await supabase.auth.signOut();
   };
 

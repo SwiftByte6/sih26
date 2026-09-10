@@ -30,6 +30,14 @@ export default function SimulatorPage() {
   useEffect(() => {
     setMounted(true);
 
+    // Read persistent project setup state
+    if (typeof window !== 'undefined') {
+      const savedProjectState = localStorage.getItem('amr_project_started');
+      if (savedProjectState === 'true') {
+        setProjectStarted(true);
+      }
+    }
+
     // Initial auth check
     const checkUser = async () => {
       try {
@@ -50,6 +58,9 @@ export default function SimulatorPage() {
       setUser(currentUser);
       if (!currentUser) {
         setProjectStarted(false); // Reset project setup state on sign out
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('amr_project_started');
+        }
       }
       setAuthLoading(false);
     });
@@ -58,6 +69,20 @@ export default function SimulatorPage() {
       subscription.unsubscribe();
     };
   }, []);
+
+  const handleStartProject = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('amr_project_started', 'true');
+    }
+    setProjectStarted(true);
+  };
+
+  const handleReturnToProjectLauncher = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('amr_project_started');
+    }
+    setProjectStarted(false);
+  };
 
   if (!mounted || authLoading) {
     return (
@@ -75,7 +100,7 @@ export default function SimulatorPage() {
 
   // 2. Authenticated, Project Not Selected -> Project Setup Launcher
   if (!projectStarted) {
-    return <ProjectLauncher onStartProject={() => setProjectStarted(true)} />;
+    return <ProjectLauncher onStartProject={handleStartProject} />;
   }
 
   // 3. Authenticated & Project Selected -> Main Simulator Page
@@ -84,7 +109,7 @@ export default function SimulatorPage() {
       <ToastContainer />
       <TitleBar />
       <Toolbar />
-      <MenuBar onReturnToProjectLauncher={() => setProjectStarted(false)} />
+      <MenuBar onReturnToProjectLauncher={handleReturnToProjectLauncher} />
       <ManageRobotsModal />
       
       <div className="flex-1 flex overflow-hidden relative">
