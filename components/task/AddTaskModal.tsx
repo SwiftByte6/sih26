@@ -44,43 +44,64 @@ const TASK_TYPES: { label: string; value: TaskType; pickupLabel: string; dropLab
   },
 ];
 
+// Helper to deduplicate option lists by value to prevent React duplicate key warnings
+function deduplicateOptions(options: { label: string; value: string }[]): { label: string; value: string }[] {
+  const seen = new Set<string>();
+  const result: { label: string; value: string }[] = [];
+  for (const opt of options) {
+    const val = opt.value?.trim();
+    if (val && !seen.has(val)) {
+      seen.add(val);
+      result.push({ label: opt.label || val, value: val });
+    }
+  }
+  return result;
+}
+
 // Helper to filter allowed source options strictly by task type
 const getFilteredSourceOptions = (
   type: TaskType,
   pois: { id: string; type: string; label: string }[],
   shelves: { id: string }[]
 ): { label: string; value: string }[] => {
+  let rawOptions: { label: string; value: string }[] = [];
   switch (type) {
     case 'DELIVER_ITEM':
     case 'STORE_ITEM':
       // ONLY pickup locations (exclude CHARGER and DROP)
-      return [
+      rawOptions = [
         ...pois.filter((p) => p.type === 'PICKUP').map((p) => ({ label: p.label, value: p.label })),
         { label: 'P1', value: 'P1' },
         { label: 'P3', value: 'P3' },
       ];
+      break;
 
     case 'RESTOCK_SHELF':
       // ONLY storage locations
-      return [
+      rawOptions = [
+        ...pois.filter((p) => p.type === 'PICKUP' || p.label.toLowerCase().includes('storage')).map((p) => ({ label: p.label, value: p.label })),
         { label: 'Storage-01', value: 'Storage-01' },
         { label: 'Storage-02', value: 'Storage-02' },
       ];
+      break;
 
     case 'TAKE_TO_PACKING':
       // ONLY shelves
-      return shelves.map((s) => ({ label: `Shelf ${s.id}`, value: `Shelf ${s.id}` }));
+      rawOptions = shelves.map((s) => ({ label: `Shelf ${s.id}`, value: `Shelf ${s.id}` }));
+      break;
 
     case 'MOVE_CONTAINER':
       // ONLY containers/bins
-      return [
+      rawOptions = [
         { label: 'Bin-A', value: 'Bin-A' },
         { label: 'Bin-B', value: 'Bin-B' },
       ];
+      break;
 
     default:
-      return [];
+      rawOptions = [];
   }
+  return deduplicateOptions(rawOptions);
 };
 
 // Helper to filter allowed target options strictly by task type
@@ -89,40 +110,51 @@ const getFilteredTargetOptions = (
   pois: { id: string; type: string; label: string }[],
   shelves: { id: string }[]
 ): { label: string; value: string }[] => {
+  let rawOptions: { label: string; value: string }[] = [];
   switch (type) {
     case 'DELIVER_ITEM':
       // ONLY drop locations (exclude CHARGER and PICKUP)
-      return [
+      rawOptions = [
         ...pois.filter((p) => p.type === 'DROP').map((p) => ({ label: p.label, value: p.label })),
         { label: 'D5', value: 'D5' },
         { label: 'D8', value: 'D8' },
       ];
+      break;
 
     case 'RESTOCK_SHELF':
       // ONLY shelves
-      return shelves.map((s) => ({ label: `Shelf ${s.id}`, value: `Shelf ${s.id}` }));
+      rawOptions = shelves.map((s) => ({ label: `Shelf ${s.id}`, value: `Shelf ${s.id}` }));
+      break;
 
     case 'TAKE_TO_PACKING':
       // ONLY packing areas
-      return [{ label: 'Packing Area B', value: 'Packing Area B' }];
+      rawOptions = [
+        ...pois.filter((p) => p.type === 'DROP' || p.label.toLowerCase().includes('pack')).map((p) => ({ label: p.label, value: p.label })),
+        { label: 'Packing Area B', value: 'Packing Area B' },
+      ];
+      break;
 
     case 'STORE_ITEM':
       // ONLY storage locations
-      return [
+      rawOptions = [
+        ...pois.filter((p) => p.type === 'DROP' || p.label.toLowerCase().includes('storage')).map((p) => ({ label: p.label, value: p.label })),
         { label: 'Storage-01', value: 'Storage-01' },
         { label: 'Storage-02', value: 'Storage-02' },
       ];
+      break;
 
     case 'MOVE_CONTAINER':
       // ONLY containers/bins
-      return [
+      rawOptions = [
         { label: 'Bin-A', value: 'Bin-A' },
         { label: 'Bin-B', value: 'Bin-B' },
       ];
+      break;
 
     default:
-      return [];
+      rawOptions = [];
   }
+  return deduplicateOptions(rawOptions);
 };
 
 export const AddTaskModal: React.FC<AddTaskModalProps> = ({ isOpen, onClose }) => {
@@ -247,8 +279,8 @@ export const AddTaskModal: React.FC<AddTaskModalProps> = ({ isOpen, onClose }) =
                 required
               >
                 <option value="">-- Select {currentTypeConfig.pickupLabel} --</option>
-                {sourceOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
+                {sourceOptions.map((opt, idx) => (
+                  <option key={`src-${opt.value}-${idx}`} value={opt.value}>
                     {opt.label}
                   </option>
                 ))}
@@ -264,8 +296,8 @@ export const AddTaskModal: React.FC<AddTaskModalProps> = ({ isOpen, onClose }) =
                 required
               >
                 <option value="">-- Select {currentTypeConfig.dropLabel} --</option>
-                {targetOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
+                {targetOptions.map((opt, idx) => (
+                  <option key={`tgt-${opt.value}-${idx}`} value={opt.value}>
                     {opt.label}
                   </option>
                 ))}

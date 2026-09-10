@@ -1360,20 +1360,46 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
     const movingRobots = deconfliction.updatedRobots;
 
     deconfliction.deconflictEvents.forEach((evt) => {
-      p2pStore.sendDirectMessage(evt.priorityRobotId, evt.yieldingRobotId, 'CONFLICT_DETECTED', {
+      // 1. Priority AMR communicates its trajectory corridor
+      p2pStore.sendDirectMessage(evt.priorityRobotId, evt.yieldingRobotId, 'PATH_INTENT', {
+        robotId: evt.priorityRobotId,
+        body: `PATH_INTENT: Priority corridor claimed by ${evt.priorityRobotId}`,
+      });
+
+      // 2. Conflict detected
+      p2pStore.sendDirectMessage(evt.yieldingRobotId, evt.priorityRobotId, 'CONFLICT_DETECTED', {
         conflictLocation: evt.conflictLocation,
         conflictTick: evt.conflictTick,
         conflictType: evt.conflictType,
-        body: `CONFLICT_DETECTED: Predicted conflict at (${evt.conflictLocation.col},${evt.conflictLocation.row}) in t+${evt.conflictTick}`,
+        body: `CONFLICT_DETECTED: Predicted collision at (${evt.conflictLocation.col},${evt.conflictLocation.row}) in t+${evt.conflictTick} with ${evt.priorityRobotId}`,
       });
+
+      // 3. Yielding AMR acknowledges right-of-way
+      p2pStore.sendDirectMessage(evt.yieldingRobotId, evt.priorityRobotId, 'YIELD_REQUEST', {
+        body: `YIELD_REQUEST: ${evt.yieldingRobotId} yielding corridor to ${evt.priorityRobotId}`,
+      });
+
+      // 4. Yielding AMR recalculates detour and updates path
+      p2pStore.sendDirectMessage(evt.yieldingRobotId, evt.priorityRobotId, 'PATH_UPDATED', {
+        yieldingRobotId: evt.yieldingRobotId,
+        priorityRobotId: evt.priorityRobotId,
+        conflictLocation: evt.conflictLocation,
+        conflictTick: evt.conflictTick,
+        conflictType: evt.conflictType,
+        reroutedPathLength: evt.newPathLength,
+        body: `PATH_UPDATED: ${evt.yieldingRobotId} detour route calculated (${evt.newPathLength} steps). Continuing movement.`,
+      });
+
       p2pStore.sendDirectMessage(evt.yieldingRobotId, evt.priorityRobotId, 'PATH_DECONFLICT', {
         yieldingRobotId: evt.yieldingRobotId,
         priorityRobotId: evt.priorityRobotId,
         conflictLocation: evt.conflictLocation,
         conflictTick: evt.conflictTick,
         conflictType: evt.conflictType,
+        reroutedPathLength: evt.newPathLength,
         body: evt.body,
       });
+
       newLinks.push({ from: evt.yieldingRobotId, to: evt.priorityRobotId, expires: now + 3000 });
     });
 
@@ -1545,38 +1571,69 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
             }
           }
 
-          const blockedTicks = blockedTicksMap.get(robot.id) || 0;
-          // Reactive dynamic replanning for AMRs blocked >= 2 ticks
-          if (blockedTicks >= 2 && robot.path.length > 0) {
-            const targetCoord =
-              robot.taskPhase === 'TO_PICKUP'
-                ? robot.pickupPoint
-                : robot.taskPhase === 'TO_DROP'
-                ? robot.dropPoint
-                : robot.path[robot.path.length - 1];
-            if (targetCoord) {
-              const otherOccupied = movingRobots
-                .filter((o) => o.id !== robot.id)
-                .map((o) => ({ row: o.row, col: o.col }));
-              const rerouted = findDeconflictedPathAStar(
-                state,
-                robot.row,
-                robot.col,
-                targetCoord.row,
-                targetCoord.col,
-                [],
-                otherOccupied
-              );
-              if (rerouted.length > 0 && (rerouted[0].row !== robot.path[0].row || rerouted[0].col !== robot.path[0].col)) {
-                blockedTicksMap.set(robot.id, 0);
-                return {
-                  ...robot,
-                  path: rerouted,
-                  state: robot.state === 'NAVIGATING_TO_CHARGER' ? ('NAVIGATING_TO_CHARGER' as const) : ('MOVING' as const),
-                };
+          // IMMEDIATE Proactive / Dynamic Detour Replanning (No arbitrary stop & wait delay!)
+          const targetCoord =
+            robot.taskPhase === 'TO_PICKUP'
+              ? robot.pickupPoint
+              : robot.taskPhase === 'TO_DROP'
+              ? robot.dropPoint
+              : (robot.state === 'NAVIGATING_TO_CHARGER' || robot.chargingState === 'NAVIGATING') && robot.chargingPoint
+              ? robot.chargingPoint
+              : robot.path.length > 0
+              ? robot.path[robot.path.length - 1]
+              : null;
+
+          if (targetCoord) {
+            const blockedInfo = collisionResolution.blockedRobotIds.get(robot.id);
+            const blockerId = blockedInfo?.blockingRobotId;
+            const blockerRobot = movingRobots.find((r) => r.id === blockerId);
+            const avoidCorridor = blockerRobot
+              ? [{ row: blockerRobot.row, col: blockerRobot.col }, ...blockerRobot.path]
+              : [];
+
+            const otherOccupied = movingRobots
+              .filter((o) => o.id !== robot.id)
+              .map((o) => ({ row: o.row, col: o.col }));
+
+            const rerouted = findDeconflictedPathAStar(
+              state,
+              robot.row,
+              robot.col,
+              targetCoord.row,
+              targetCoord.col,
+              avoidCorridor,
+              otherOccupied
+            );
+
+            // If an alternative detour route exists, immediately adopt it and CONTINUE MOVING
+            if (rerouted.length > 0 && (rerouted[0].row !== robot.path[0].row || rerouted[0].col !== robot.path[0].col || rerouted.length !== robot.path.length)) {
+              blockedTicksMap.set(robot.id, 0);
+              if (blockerRobot) {
+                p2pStore.sendDirectMessage(blockerRobot.id, robot.id, 'PATH_INTENT', {
+                  robotId: blockerRobot.id,
+                  body: `PATH_INTENT: Corridor maintained by ${blockerRobot.id}`,
+                });
+                p2pStore.sendDirectMessage(robot.id, blockerRobot.id, 'CONFLICT_DETECTED', {
+                  body: `CONFLICT_DETECTED: Overlap with ${blockerRobot.id}`,
+                });
+                p2pStore.sendDirectMessage(robot.id, blockerRobot.id, 'YIELD_REQUEST', {
+                  body: `YIELD_REQUEST: Yielding right of way to ${blockerRobot.id}`,
+                });
+                p2pStore.sendDirectMessage(robot.id, blockerRobot.id, 'PATH_UPDATED', {
+                  reroutedPathLength: rerouted.length,
+                  body: `PATH_UPDATED: Recalculated detour (${rerouted.length} steps) around ${blockerRobot.id}. Continuing motion.`,
+                });
+                newLinks.push({ from: robot.id, to: blockerRobot.id, expires: now + 2500 });
               }
+              return {
+                ...robot,
+                path: rerouted,
+                state: robot.state === 'NAVIGATING_TO_CHARGER' ? ('NAVIGATING_TO_CHARGER' as const) : ('MOVING' as const),
+              };
             }
           }
+
+          // Fallback ONLY if absolutely no alternate path exists physically:
           return {
             ...robot,
             state: 'WAITING_FOR_PATH_CLEARANCE' as const,

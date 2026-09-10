@@ -27,6 +27,8 @@ export type P2PMessageType =
   // Phase 9 Proactive Trajectory Coordination & Deconfliction
   | 'PATH_INTENT'
   | 'PATH_DECONFLICT'
+  | 'PATH_UPDATED'
+  | 'REPLANNING'
   | 'CONFLICT_DETECTED'
   | 'YIELD_REQUEST'
   | 'YIELD_RESPONSE'
@@ -60,6 +62,35 @@ export interface PathDeconflictPayload {
   body: string;
 }
 
+export interface EspNowPacketMetadata {
+  protocol: 'SIMULATED_ESP_NOW';
+  packetId: string;
+  srcMac: string;
+  dstMac: string;
+  channel: number;
+  rssi: number;
+  deliveryStatus: 'DELIVERED' | 'ACK_RECEIVED' | 'FAILED';
+  deliveryMode: 'UNICAST' | 'BROADCAST' | 'SELECTIVE';
+  payloadBytes: number;
+}
+
+export interface VirtualEsp32PeerEntry {
+  robotId: string;
+  macAddress: string;
+  channel: number;
+  rssi: number;
+  status: 'PAIRED' | 'OFFLINE';
+  lastSeen: number;
+}
+
+export interface VirtualEsp32Device {
+  macAddress: string;
+  channel: number;
+  boardType: string;
+  txPowerDbm: number;
+  localPeerTable: Record<string, VirtualEsp32PeerEntry>;
+}
+
 export type PeerNodeStatus = 'ONLINE' | 'OFFLINE';
 
 export interface P2PMessage {
@@ -69,13 +100,16 @@ export interface P2PMessage {
   receiverId: string | 'ALL';
   type: P2PMessageType;
   payload?: any;
+  espNow?: EspNowPacketMetadata;
 }
 
 export interface PeerInfo {
   robotId: string;        // e.g. "AMR-01"
   nodeId: string;         // e.g. "amr-node-01"
+  macAddress?: string;    // Simulated ESP32 MAC e.g. "30:AE:A4:01:00:01"
   status: PeerNodeStatus;
   lastSeen: number;       // Timestamp (ms) when last message/heartbeat was received
+  rssi?: number;
   lastKnownPosition?: { col: number; row: number };
   lastKnownState?: string;
   lastKnownBattery?: number;
@@ -118,9 +152,6 @@ export interface LocalTaskKnowledge {
   peerProposals?: Record<string, WinnerProposalEntry>; // Keyed by peer's robotId (e.g. "AMR-02")
 }
 
-
-
-
 export interface AmrAgentNodeStats {
   messagesSent: number;
   messagesReceived: number;
@@ -131,6 +162,8 @@ export interface AmrAgentNodeStats {
 export interface AmrAgentNode {
   robotId: string;        // e.g. "AMR-01"
   nodeId: string;         // e.g. "amr-node-01"
+  macAddress?: string;    // e.g. "30:AE:A4:01:00:01"
+  esp32Device?: VirtualEsp32Device;
   isOnline: boolean;
   lastHeartbeatSent: number;
   peerList: Record<string, PeerInfo>; // Keyed by peer's robotId

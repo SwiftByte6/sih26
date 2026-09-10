@@ -25,14 +25,19 @@ export const RobotCommunicationSubTab: React.FC = () => {
         return 'bg-emerald-600/30 text-emerald-200 border-emerald-500/60 font-bold';
       case 'TASK_COMPLETED':
         return 'bg-teal-500/20 text-teal-300 border-teal-500/40';
+      case 'PATH_INTENT':
+        return 'bg-blue-500/20 text-blue-300 border-blue-500/40';
       case 'CONFLICT_DETECTED':
         return 'bg-rose-500/20 text-rose-300 border-rose-500/40';
       case 'YIELD_REQUEST':
         return 'bg-orange-500/20 text-orange-300 border-orange-500/40';
       case 'YIELD_RESPONSE':
         return 'bg-sky-500/20 text-sky-300 border-sky-500/40';
+      case 'REPLANNING':
+        return 'bg-purple-500/20 text-purple-300 border-purple-500/40';
+      case 'PATH_UPDATED':
       case 'PATH_DECONFLICT':
-        return 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40';
+        return 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40 font-semibold';
       case 'EMERGENCY':
       case 'ROBOT_FAILURE':
         return 'bg-red-500/30 text-red-200 border-red-500/60 font-bold';
@@ -87,6 +92,10 @@ export const RobotCommunicationSubTab: React.FC = () => {
       return `Task [${taskId}] completed${loc ? ` at ${loc}` : ''}`;
     }
 
+    if (type === 'PATH_INTENT') {
+      return payload.body || `Trajectory intent shared by ${msg.senderId}`;
+    }
+
     if (type === 'CONFLICT_DETECTED') {
       const loc = payload.conflictLocation ? `Cell (${payload.conflictLocation.col},${payload.conflictLocation.row})` : '';
       const tick = payload.conflictTick ? ` in t+${payload.conflictTick}` : '';
@@ -101,10 +110,14 @@ export const RobotCommunicationSubTab: React.FC = () => {
       return payload.body || 'Yield acknowledged / path cleared';
     }
 
-    if (type === 'PATH_DECONFLICT') {
+    if (type === 'REPLANNING') {
+      return payload.body || 'Recalculating deconflicted route...';
+    }
+
+    if (type === 'PATH_UPDATED' || type === 'PATH_DECONFLICT') {
       const yielder = payload.yieldingRobotId || msg.senderId;
       const priority = payload.priorityRobotId || msg.receiverId;
-      return `${yielder} rerouted ahead-of-time around ${priority}`;
+      return payload.body || `${yielder} rerouted around ${priority}`;
     }
 
     return payload.body || payload.status || (typeof payload === 'string' ? payload : JSON.stringify(payload));
@@ -143,17 +156,39 @@ export const RobotCommunicationSubTab: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 p-4 overflow-y-auto bg-workspace">
+    <div className="flex-1 p-4 overflow-y-auto bg-workspace flex flex-col gap-3">
+      {/* ESP-NOW Simulation Header Banner */}
+      <div className="bg-slate-900 border border-slate-700/80 p-3 rounded-md shadow-sm flex items-center justify-between text-slate-200">
+        <div className="flex items-center gap-2.5">
+          <div className="p-1.5 bg-blue-500/20 text-blue-400 rounded border border-blue-500/40">
+            <Radio size={18} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="font-bold text-[13px] text-white tracking-wide">SIMULATED ESP-NOW TRANSPORT</h2>
+              <span className="px-1.5 py-0.5 rounded text-[8.5px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+                SOFTWARE VIRTUALIZATION
+              </span>
+            </div>
+            <div className="text-[10px] text-slate-400 font-mono">
+              Virtual ESP32 2.4GHz Direct Transport • Deterministic MAC • Selective Decentralized Routing • Zero Server Dependency
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {robots.map((robot) => {
           const isSelected = selectedItemId === robot.id;
           const p2pNode = p2pNodes[robot.id];
           const isOnline = p2pNode ? p2pNode.isOnline : (robot.isOnline ?? true);
+          const virtualMac = p2pNode?.macAddress || `30:AE:A4:01:00:${robot.id.replace(/\D/g, '').padStart(2, '0')}`;
+
           // Filter history to ONLY show messages directly associated with this specific robot
           const history = p2pNode
             ? p2pNode.history.filter(
                 (m) =>
-                  (m.senderId === robot.id || m.receiverId === robot.id) &&
+                  (m.senderId === robot.id || m.receiverId === robot.id || (m.receiverId === 'ALL' && (m.type === 'TASK_ANNOUNCEMENT' || m.type === 'EMERGENCY' || m.type === 'TASK_CLAIMED'))) &&
                   m.type !== 'HEARTBEAT' &&
                   (m.type !== 'STATUS_UPDATE' || m.payload?.body)
               )
@@ -174,9 +209,14 @@ export const RobotCommunicationSubTab: React.FC = () => {
                     <Bot size={16} className="text-accent" />
                   </div>
                   <div>
-                    <div className="font-bold text-[13px] text-text font-mono">{robot.id}</div>
+                    <div className="font-bold text-[13px] text-text font-mono flex items-center gap-1.5">
+                      {robot.id}
+                      <span className="text-[9px] text-cyan-600 dark:text-cyan-400 font-normal">
+                        ({virtualMac})
+                      </span>
+                    </div>
                     <div className="text-[10px] text-muted font-mono">
-                      Pos: ({robot.col}, {robot.row})
+                      Pos: ({robot.col}, {robot.row}) • Ch 1 (-55 dBm)
                     </div>
                   </div>
                 </div>
@@ -209,20 +249,24 @@ export const RobotCommunicationSubTab: React.FC = () => {
                 <div>Cap: <span className="text-text font-semibold">{robot.payloadCapacity ?? 20}kg</span></div>
               </div>
 
-              {/* Local Peer Knowledge Table (Independent Peer Awareness) */}
+              {/* Local Peer Knowledge Table (ESP-NOW Virtual Device Table) */}
               {p2pNode && Object.keys(p2pNode.peerList).length > 0 && (
                 <div className="px-3 py-1.5 bg-slate-900 border-b border-slate-800 text-[9.5px] font-mono text-slate-300">
-                  <div className="text-[8.5px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1">
-                    <Radio size={10} className="text-cyan-400" />
-                    Local Peer Knowledge Table:
+                  <div className="text-[8.5px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
+                    <span className="flex items-center gap-1 text-cyan-400">
+                      <Radio size={10} />
+                      ESP-NOW Local Peer Table:
+                    </span>
+                    <span className="text-slate-500 text-[8px]">ESP32-WROOM-32</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {Object.values(p2pNode.peerList).map((peer) => (
-                      <span key={peer.robotId} className="px-1.5 py-0.5 rounded bg-slate-800/90 border border-slate-700/80">
-                        <span className="font-bold text-cyan-300">{peer.robotId}</span>:{' '}
+                      <span key={peer.robotId} className="px-1.5 py-0.5 rounded bg-slate-800/90 border border-slate-700/80 flex items-center gap-1">
+                        <span className="font-bold text-cyan-300">{peer.robotId}</span>
+                        <span className="text-[8px] text-slate-400">({peer.macAddress?.slice(-5) || '..'})</span>:{' '}
                         {peer.status === 'ONLINE' ? (
                           <span className="text-emerald-300">
-                            {peer.lastKnownPosition ? `(${peer.lastKnownPosition.col},${peer.lastKnownPosition.row})` : 'ONLINE'}
+                            {peer.lastKnownPosition ? `(${peer.lastKnownPosition.col},${peer.lastKnownPosition.row})` : 'PAIRED'}
                           </span>
                         ) : (
                           <span className="text-rose-400 font-bold">OFFLINE</span>
@@ -236,9 +280,9 @@ export const RobotCommunicationSubTab: React.FC = () => {
               {/* Individual AMR Communication Area */}
               <div className="p-2 bg-[#0F172A] flex-1 flex flex-col min-h-[170px] max-h-[220px]">
                 <div className="text-[9px] font-bold tracking-wider text-slate-400 uppercase mb-1.5 flex justify-between items-center">
-                  <span className="text-cyan-400 font-semibold">{robot.id} P2P Communication</span>
+                  <span className="text-cyan-400 font-semibold">{robot.id} ESP-NOW Feed</span>
                   <div className="flex items-center gap-2">
-                    <span className="text-emerald-400 font-mono text-[9px]">{history.length} msgs</span>
+                    <span className="text-emerald-400 font-mono text-[9px]">{history.length} packets</span>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -263,7 +307,7 @@ export const RobotCommunicationSubTab: React.FC = () => {
                 <div className="flex-1 overflow-y-auto flex flex-col gap-1.5 font-mono text-[10px] pr-1">
                   {history.length === 0 ? (
                     <div className="text-slate-500 italic text-center mt-6 text-[10px]">
-                      No P2P communications for {robot.id} yet.
+                      No ESP-NOW packets for {robot.id} yet.
                     </div>
                   ) : (
                     history.map((msg) => {
@@ -271,6 +315,7 @@ export const RobotCommunicationSubTab: React.FC = () => {
                       const timeStr = new Date(msg.timestamp).toLocaleTimeString([], { hour12: false });
                       const summary = formatMessageSummary(msg);
                       const badgeClass = getMsgTypeBadgeClass(msg.type);
+                      const deliveryStatus = msg.espNow?.deliveryStatus || 'DELIVERED';
 
                       return (
                         <div
@@ -281,7 +326,7 @@ export const RobotCommunicationSubTab: React.FC = () => {
                               : 'bg-slate-850/80 border-slate-700/80'
                           }`}
                         >
-                          {/* Header: SENDER → RECEIVER & Type Badge */}
+                          {/* Header: SENDER → RECEIVER & Type Badge & Delivery State */}
                           <div className="flex justify-between items-center text-[9px] font-semibold mb-0.5">
                             <div className="flex items-center gap-1">
                               <span className={`font-bold ${isOutgoing ? 'text-cyan-300' : 'text-slate-300'}`}>
@@ -291,10 +336,16 @@ export const RobotCommunicationSubTab: React.FC = () => {
                               <span className={`font-bold ${msg.receiverId === 'ALL' ? 'text-amber-400' : 'text-emerald-300'}`}>
                                 {msg.receiverId}
                               </span>
+                              <span className="text-[8px] text-slate-500">
+                                {msg.espNow ? `(${msg.espNow.deliveryMode})` : ''}
+                              </span>
                             </div>
                             <div className="flex items-center gap-1.5">
                               <span className={`uppercase text-[8px] px-1.5 py-0.2 rounded border ${badgeClass}`}>
                                 {msg.type}
+                              </span>
+                              <span className="text-emerald-400 text-[8px] font-bold">
+                                {deliveryStatus}
                               </span>
                               <span className="text-slate-400 text-[8.5px]">{timeStr}</span>
                             </div>

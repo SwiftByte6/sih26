@@ -1,5 +1,10 @@
 import { AmrAgentNode, P2PMessage, P2PMessageType } from '../../types/p2p';
 import { IP2PCommunicationAdapter } from './P2PAdapter';
+import {
+  SimulatedEspNowTransport,
+  getVirtualMacAddress,
+  wrapEspNowPacket,
+} from './SimulatedEspNowTransport';
 
 let messageCounter = 0;
 function generateMessageId(): string {
@@ -9,6 +14,11 @@ function generateMessageId(): string {
 
 export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
   private nodes: Map<string, AmrAgentNode> = new Map();
+  private espNowTransport: SimulatedEspNowTransport = new SimulatedEspNowTransport();
+
+  getEspNowTransport(): SimulatedEspNowTransport {
+    return this.espNowTransport;
+  }
 
   registerNode(
     robotId: string,
@@ -18,9 +28,14 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
       return this.nodes.get(robotId)!;
     }
 
+    const macAddress = getVirtualMacAddress(robotId);
+    const esp32Device = this.espNowTransport.registerDevice(robotId);
+
     const newNode: AmrAgentNode = {
       robotId,
       nodeId,
+      macAddress,
+      esp32Device,
       isOnline: true,
       lastHeartbeatSent: 0,
       peerList: {},
@@ -39,20 +54,30 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
 
     // Populate dynamic peer lists between newly registered node and existing nodes
     this.nodes.forEach((existingNode) => {
+      const existingMac = getVirtualMacAddress(existingNode.robotId);
+
       // Existing node discovers new node
       existingNode.peerList[robotId] = {
         robotId,
         nodeId,
+        macAddress,
         status: 'ONLINE',
         lastSeen: now,
+        rssi: -55,
       };
+
       // New node discovers existing node
       newNode.peerList[existingNode.robotId] = {
         robotId: existingNode.robotId,
         nodeId: existingNode.nodeId,
+        macAddress: existingMac,
         status: existingNode.isOnline ? 'ONLINE' : 'OFFLINE',
         lastSeen: now,
+        rssi: -55,
       };
+
+      // Pair in ESP-NOW peer table
+      this.espNowTransport.pairPeers(robotId, existingNode.robotId);
     });
 
     this.nodes.set(robotId, newNode);
@@ -61,6 +86,7 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
 
   unregisterNode(robotId: string): void {
     this.nodes.delete(robotId);
+    this.espNowTransport.unregisterDevice(robotId);
     this.nodes.forEach((node) => {
       delete node.peerList[robotId];
     });
@@ -73,11 +99,23 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
       return false; // Offline or unregistered sender cannot send messages
     }
 
+    // Encapsulate with Simulated ESP-NOW frame metadata
+    this.espNowTransport.prepareMessage(message);
+
     if (sender) {
       sender.history.push(message);
       sender.stats.messagesSent++;
       if (message.type === 'HEARTBEAT') {
         sender.lastHeartbeatSent = message.timestamp;
+      }
+      if (message.type === 'TASK_CLAIMED' && message.payload?.taskId) {
+        const taskId = message.payload.taskId;
+        const ownerRobotId = message.payload.ownerRobotId || sender.robotId;
+        if (sender.knownTasks && sender.knownTasks[taskId]) {
+          sender.knownTasks[taskId].claimedBy = ownerRobotId;
+          sender.knownTasks[taskId].status = 'CLAIMED';
+          sender.knownTasks[taskId].allocationState = 'CLAIMED';
+        }
       }
     }
 
@@ -125,7 +163,7 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
             receiver: message.receiverId,
             category,
             priority,
-            message: `[${message.type}] ${bodyText}`,
+            message: `[SIMULATED ESP-NOW] [${message.type}] ${bodyText}`,
           });
         }
       } catch (e) {}
@@ -711,6 +749,7 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
 
   clearAllNodes(): void {
     this.nodes.clear();
+    this.espNowTransport = new SimulatedEspNowTransport();
   }
 
   resetNetwork(): void {
@@ -729,6 +768,12 @@ export class SimulatedP2PNetwork implements IP2PCommunicationAdapter {
         node.peerList[peerId].status = 'ONLINE';
         node.peerList[peerId].lastSeen = now;
       });
+      if (node.esp32Device) {
+        Object.keys(node.esp32Device.localPeerTable).forEach((peerId) => {
+          node.esp32Device!.localPeerTable[peerId].status = 'PAIRED';
+          node.esp32Device!.localPeerTable[peerId].lastSeen = now;
+        });
+      }
     });
   }
 }
