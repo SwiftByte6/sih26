@@ -207,12 +207,14 @@ export function preemptivelyDeconflictTrajectories(
 
     const yielder = updatedRobots[yielderIdx];
 
-    // Determine target destination (pickupPoint or dropPoint depending on phase)
+    // Determine target destination (pickupPoint, dropPoint, chargingPoint, or end of path)
     const targetCoord =
       yielder.taskPhase === 'TO_PICKUP'
         ? yielder.pickupPoint
         : yielder.taskPhase === 'TO_DROP'
         ? yielder.dropPoint
+        : (yielder.state === 'NAVIGATING_TO_CHARGER' || yielder.chargingState === 'NAVIGATING') && yielder.chargingPoint
+        ? yielder.chargingPoint
         : yielder.path.length > 0
         ? yielder.path[yielder.path.length - 1]
         : null;
@@ -244,7 +246,7 @@ export function preemptivelyDeconflictTrajectories(
       updatedRobots[yielderIdx] = {
         ...yielder,
         path: newDeconflictedPath,
-        state: 'MOVING',
+        state: yielder.state === 'NAVIGATING_TO_CHARGER' ? 'NAVIGATING_TO_CHARGER' : 'MOVING',
       };
       processedYielders.add(conflict.yieldingRobotId);
 

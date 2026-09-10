@@ -104,7 +104,8 @@ export function findPathAStar(
   startCol: number,
   endRow: number,
   endCol: number,
-  avoidCells?: Set<string>
+  avoidCells?: Set<string>,
+  allowAvoidFallback: boolean = true
 ): { row: number; col: number }[] {
   if (startRow === endRow && startCol === endCol) {
     return [{ row: endRow, col: endCol }];
@@ -194,8 +195,8 @@ export function findPathAStar(
     }
   }
 
-  // If no path found with avoidCells, retry without avoidCells as fallback
-  if (avoidCells && avoidCells.size > 0) {
+  // If no path found with avoidCells, retry without avoidCells ONLY if fallback is explicitly allowed
+  if (allowAvoidFallback && avoidCells && avoidCells.size > 0) {
     return findPathAStar(state, startRow, startCol, endRow, endCol);
   }
 
@@ -231,17 +232,17 @@ export function findDeconflictedPathAStar(
     });
   }
 
-  // Never avoid the destination cell or the immediate start cell
+  // Never avoid the immediate start cell
   avoidSet.delete(`${startRow},${startCol}`);
+  // If destination is not the conflicting cell, ensure destination is reachable
   avoidSet.delete(`${endRow},${endCol}`);
 
-  const deconflictedPath = findPathAStar(state, startRow, startCol, endRow, endCol, avoidSet);
+  const deconflictedPath = findPathAStar(state, startRow, startCol, endRow, endCol, avoidSet, false);
   if (deconflictedPath.length > 0) {
     return deconflictedPath;
   }
 
-  // Fallback to standard path if detour is completely blocked
-  return findPathAStar(state, startRow, startCol, endRow, endCol);
+  return [];
 }
 
 function heuristic(r1: number, c1: number, r2: number, c2: number): number {

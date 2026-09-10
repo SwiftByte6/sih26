@@ -25,14 +25,19 @@ export const RobotCommunicationSubTab: React.FC = () => {
         return 'bg-emerald-600/30 text-emerald-200 border-emerald-500/60 font-bold';
       case 'TASK_COMPLETED':
         return 'bg-teal-500/20 text-teal-300 border-teal-500/40';
+      case 'PATH_INTENT':
+        return 'bg-blue-500/20 text-blue-300 border-blue-500/40';
       case 'CONFLICT_DETECTED':
         return 'bg-rose-500/20 text-rose-300 border-rose-500/40';
       case 'YIELD_REQUEST':
         return 'bg-orange-500/20 text-orange-300 border-orange-500/40';
       case 'YIELD_RESPONSE':
         return 'bg-sky-500/20 text-sky-300 border-sky-500/40';
+      case 'REPLANNING':
+        return 'bg-purple-500/20 text-purple-300 border-purple-500/40';
+      case 'PATH_UPDATED':
       case 'PATH_DECONFLICT':
-        return 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40';
+        return 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40 font-semibold';
       case 'EMERGENCY':
       case 'ROBOT_FAILURE':
         return 'bg-red-500/30 text-red-200 border-red-500/60 font-bold';
@@ -87,6 +92,10 @@ export const RobotCommunicationSubTab: React.FC = () => {
       return `Task [${taskId}] completed${loc ? ` at ${loc}` : ''}`;
     }
 
+    if (type === 'PATH_INTENT') {
+      return payload.body || `Trajectory intent shared by ${msg.senderId}`;
+    }
+
     if (type === 'CONFLICT_DETECTED') {
       const loc = payload.conflictLocation ? `Cell (${payload.conflictLocation.col},${payload.conflictLocation.row})` : '';
       const tick = payload.conflictTick ? ` in t+${payload.conflictTick}` : '';
@@ -101,10 +110,14 @@ export const RobotCommunicationSubTab: React.FC = () => {
       return payload.body || 'Yield acknowledged / path cleared';
     }
 
-    if (type === 'PATH_DECONFLICT') {
+    if (type === 'REPLANNING') {
+      return payload.body || 'Recalculating deconflicted route...';
+    }
+
+    if (type === 'PATH_UPDATED' || type === 'PATH_DECONFLICT') {
       const yielder = payload.yieldingRobotId || msg.senderId;
       const priority = payload.priorityRobotId || msg.receiverId;
-      return `${yielder} rerouted ahead-of-time around ${priority}`;
+      return payload.body || `${yielder} rerouted around ${priority}`;
     }
 
     return payload.body || payload.status || (typeof payload === 'string' ? payload : JSON.stringify(payload));

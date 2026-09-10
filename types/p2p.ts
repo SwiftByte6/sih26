@@ -27,6 +27,8 @@ export type P2PMessageType =
   // Phase 9 Proactive Trajectory Coordination & Deconfliction
   | 'PATH_INTENT'
   | 'PATH_DECONFLICT'
+  | 'PATH_UPDATED'
+  | 'REPLANNING'
   | 'CONFLICT_DETECTED'
   | 'YIELD_REQUEST'
   | 'YIELD_RESPONSE'
