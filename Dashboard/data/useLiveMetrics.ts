@@ -27,7 +27,7 @@ export function useLiveMetrics() {
 
     const totalRobots = robots.length || 4;
     const activeRobotsCount = robots.filter((r) => r.state !== 'ERROR' && r.state !== 'CHARGING').length || totalRobots;
-    const workingRobotsCount = robots.filter((r) => r.currentTask !== null || r.state === 'MOVING' || r.state === 'WORKING' || r.state === 'PICKING' || r.state === 'DELIVERING').length;
+    const workingRobotsCount = robots.filter((r) => r.currentTask !== null || (r.state as string) === 'MOVING' || (r.state as string) === 'WORKING' || (r.state as string) === 'PICKING' || (r.state as string) === 'DELIVERING').length;
 
     const fleetUtilization = Math.round((workingRobotsCount / totalRobots) * 100);
     const successRate = (completedTasks + failedTasks) > 0
@@ -49,7 +49,7 @@ export function useLiveMetrics() {
     }));
 
     const amrUtilization = robots.map((r) => {
-      const isWorking = r.currentTask !== null || r.state === 'MOVING' || r.state === 'WORKING';
+      const isWorking = r.currentTask !== null || (r.state as string) === 'MOVING' || (r.state as string) === 'WORKING';
       const utilVal = isWorking ? Math.min(95, 75 + Math.floor(Math.random() * 20)) : 30;
       return { amr: r.id, utilization: utilVal };
     });
@@ -73,7 +73,7 @@ export function useLiveMetrics() {
       const amrTotal = tasks.filter((t) => t.assigned_robot_id === r.id || r.currentTask === t.task_id).length;
 
       const rate = amrTotal > 0 ? (amrCompleted / (amrCompleted + amrFailed || 1)) * 100 : 100;
-      const isWorking = r.currentTask !== null || r.state === 'MOVING' || r.state === 'WORKING' || r.state === 'PICKING' || r.state === 'DELIVERING';
+      const isWorking = r.currentTask !== null || (r.state as string) === 'MOVING' || (r.state as string) === 'WORKING' || (r.state as string) === 'PICKING' || (r.state as string) === 'DELIVERING';
       const util = isWorking ? 95 : 70;
       const eff = Math.min(100, Math.round((rate * 0.6 + util * 0.4) * 10) / 10);
       return {
@@ -269,10 +269,12 @@ export function useLiveMetrics() {
     const nodeKeys = Object.keys(p2pNodes);
     
     // Count P2P messages from nodes stats & history
+    // Count P2P messages from nodes stats & history
     nodeKeys.forEach((k) => {
       const n = p2pNodes[k];
       if (n) {
-        totalMessages += (n.stats?.sentCount || 0) + (n.stats?.receivedCount || 0);
+        const stats: any = n.stats || {};
+        totalMessages += (stats.sentCount || 0) + (stats.receivedCount || 0);
       }
     });
 
@@ -293,17 +295,19 @@ export function useLiveMetrics() {
 
     const messagesByAMR = robots.map((r) => {
       const node = p2pNodes[r.id];
-      const count = node ? (node.stats?.sentCount || 0) + (node.stats?.receivedCount || 0) : Math.floor(totalMessages / robots.length);
+      const stats: any = node?.stats || {};
+      const count = node ? (stats.sentCount || 0) + (stats.receivedCount || 0) : Math.floor(totalMessages / robots.length);
       return { amr: r.id, messages: count };
     });
 
     // P2P Type Distribution
     const catMap: Record<string, number> = { Heartbeat: 0, Task: 0, Status: 0, Collision: 0, Coordination: 0 };
     commMessages.forEach((m) => {
-      if (m.category === 'TASK_BID' || m.category === 'TASK_ANNOUNCE' || m.category === 'TASK_AWARD') catMap.Task += 1;
-      else if (m.category === 'COLLISION') catMap.Collision += 1;
-      else if (m.category === 'HEARTBEAT') catMap.Heartbeat += 1;
-      else if (m.category === 'STATUS') catMap.Status += 1;
+      const cat = m.category as string;
+      if (cat === 'TASK_BID' || cat === 'TASK_ANNOUNCE' || cat === 'TASK_AWARD') catMap.Task += 1;
+      else if (cat === 'COLLISION') catMap.Collision += 1;
+      else if (cat === 'HEARTBEAT') catMap.Heartbeat += 1;
+      else if (cat === 'STATUS') catMap.Status += 1;
       else catMap.Coordination += 1;
     });
 
@@ -344,14 +348,14 @@ export function useLiveMetrics() {
 
   // 4. COLLISION METRICS
   const collisionData = useMemo(() => {
-    const collisionMsgs = commMessages.filter((m) => m.category === 'COLLISION' || m.message.toLowerCase().includes('deconflict') || m.message.toLowerCase().includes('collision'));
+    const collisionMsgs = commMessages.filter((m) => (m.category as string) === 'COLLISION' || m.message.toLowerCase().includes('deconflict') || m.message.toLowerCase().includes('collision'));
     const detected = collisionMsgs.length > 0 ? collisionMsgs.length : fallbackCollisionKpis.detected;
     const avoided = collisionMsgs.length > 0 ? collisionMsgs.filter((m) => !m.message.toLowerCase().includes('crash')).length : fallbackCollisionKpis.avoided;
     const collisions = detected - avoided;
     const successRate = detected > 0 ? Math.round((avoided / detected) * 1000) / 10 : 100;
 
     const interventionsByAMR = robots.map((r) => {
-      const count = commMessages.filter((m) => m.sender === r.id && (m.category === 'COLLISION' || m.message.toLowerCase().includes('yield') || m.message.toLowerCase().includes('reroute'))).length;
+      const count = commMessages.filter((m) => m.sender === r.id && ((m.category as string) === 'COLLISION' || m.message.toLowerCase().includes('yield') || m.message.toLowerCase().includes('reroute'))).length;
       return { amr: r.id, count: count || Math.floor(avoided / robots.length) };
     });
 
