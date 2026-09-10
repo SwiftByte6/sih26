@@ -37,7 +37,11 @@ const MENU_CONFIG = [
   { name: 'Help', icon: HelpCircle },
 ];
 
-export const MenuBar: React.FC = () => {
+interface MenuBarProps {
+  onReturnToProjectLauncher?: () => void;
+}
+
+export const MenuBar: React.FC<MenuBarProps> = ({ onReturnToProjectLauncher }) => {
   const activeView = useTaskStore((state) => state.activeView);
   const setActiveView = useTaskStore((state) => state.setActiveView);
   const setAnalyticsTab = useTaskStore((state) => state.setAnalyticsTab);
@@ -96,15 +100,22 @@ export const MenuBar: React.FC = () => {
   const MENUS: Record<string, MenuItem[]> = {
     Project: [
       {
-        label: 'New Scenario',
+        label: 'Project Setup Launcher...',
+        action: () => {
+          if (onReturnToProjectLauncher) onReturnToProjectLauncher();
+        },
+      },
+      {
+        label: 'New Blank Scenario',
         shortcut: 'Ctrl+N',
         action: () => {
-          if (typeof window !== 'undefined' && confirm('Reset layout to default scenario?')) {
-            localStorage.removeItem('amr-warehouse-layout');
-            window.location.reload();
+          if (typeof window !== 'undefined' && confirm('Clear workspace and start new blank scenario?')) {
+            const { blankWarehouse } = require('../../data/demoWarehouse');
+            useWarehouseStore.getState().loadLayout(blankWarehouse);
           }
         },
       },
+
       {
         label: 'Open Scenario...',
         shortcut: 'Ctrl+O',

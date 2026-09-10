@@ -1,4 +1,5 @@
-import { Robot, Shelf, Obstacle, Intersection, Path, PointOfInterest, Pallet, Wall } from '../types/warehouse';
+import { Robot, Shelf, Obstacle, Intersection, Path, PointOfInterest, Pallet, Wall, LayoutSnapshot } from '../types/warehouse';
+
 
 export const defaultWalls: Wall[] = [
   { id: 'WALL-NORTH', side: 'NORTH', height: 60, thickness: 3 },
@@ -7,7 +8,9 @@ export const defaultWalls: Wall[] = [
   { id: 'WALL-EAST', side: 'EAST', height: 60, thickness: 3 },
 ];
 
-export const demoWarehouse = {
+export const demoWarehouse: LayoutSnapshot = {
+  gridRows: 40,
+  gridCols: 40,
   shelves: [
     { id: 'S1', col: 5, row: 5, width: 6, height: 2 },
     { id: 'S2', col: 13, row: 5, width: 6, height: 2 },
@@ -16,6 +19,7 @@ export const demoWarehouse = {
     { id: 'S5', col: 13, row: 15, width: 6, height: 2 },
     { id: 'S6', col: 21, row: 15, width: 6, height: 2 },
   ] as Shelf[],
+
 
   intersections: [
     { id: 'I1', col: 8, row: 11 },
@@ -127,4 +131,19 @@ export const demoWarehouse = {
     }
   ] as Robot[]
 };
+
+export const blankWarehouse: LayoutSnapshot = {
+  gridRows: 40,
+  gridCols: 40,
+  shelves: [],
+  intersections: [],
+  paths: [],
+  obstacles: [],
+  pois: [],
+  pallets: [],
+  walls: defaultWalls,
+  robots: [],
+};
+
+
 
