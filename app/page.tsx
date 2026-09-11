@@ -16,8 +16,7 @@ import { AnalyticsPanel } from '../components/dashboard/AnalyticsPanel';
 import { AuthPage } from '../components/auth/AuthPage';
 import { ProjectLauncher } from '../components/project/ProjectLauncher';
 import { useTaskStore } from '../store/taskStore';
-import { supabase } from '../lib/supabase';
-import type { User } from '@supabase/supabase-js';
+import { localAuth, User } from '../lib/localAuth';
 import { Loader2 } from 'lucide-react';
 
 export default function SimulatorPage() {
@@ -43,14 +42,14 @@ export default function SimulatorPage() {
       }
     }
 
-    // Fast initial auth check from Supabase session storage
+    // Fast initial auth check from local storage
     const checkUser = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session } } = await localAuth.auth.getSession();
         if (session?.user) {
           setUser(session.user);
         } else {
-          const { data: { user } } = await supabase.auth.getUser();
+          const { data: { user } } = await localAuth.auth.getUser();
           setUser(user);
         }
       } catch (err) {
@@ -63,7 +62,7 @@ export default function SimulatorPage() {
     checkUser();
 
     // Subscribe to auth state changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = localAuth.auth.onAuthStateChange((event, session) => {
       const currentUser = session?.user ?? null;
       setUser(currentUser);
 

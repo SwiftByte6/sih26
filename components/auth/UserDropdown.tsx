@@ -2,9 +2,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { User as UserIcon, LogOut, Shield, ChevronDown, LogIn, Key, Mail } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { localAuth, User } from '../../lib/localAuth';
 import { AuthModal } from './AuthModal';
-import type { User } from '@supabase/supabase-js';
 
 export const UserDropdown: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -19,10 +18,10 @@ export const UserDropdown: React.FC = () => {
     // Get initial session
     const getInitialUser = async () => {
       try {
-        const { data: { user } } = await supabase.auth.getUser();
+        const { data: { user } } = await localAuth.auth.getUser();
         setUser(user);
       } catch (err) {
-        console.error('Failed to get Supabase user:', err);
+        console.error('Failed to get local user:', err);
       } finally {
         setLoading(false);
       }
@@ -31,7 +30,7 @@ export const UserDropdown: React.FC = () => {
     getInitialUser();
 
     // Subscribe to Auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = localAuth.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
       setLoading(false);
     });
@@ -57,7 +56,7 @@ export const UserDropdown: React.FC = () => {
     if (typeof window !== 'undefined') {
       localStorage.removeItem('amr_project_started');
     }
-    await supabase.auth.signOut();
+    await localAuth.auth.signOut();
   };
 
   const handleOpenAuth = (mode: 'signin' | 'signup') => {
